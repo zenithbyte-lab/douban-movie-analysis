@@ -1,0 +1,312 @@
+{% extends 'base.html' %}
+
+{% block title %}情感分析{% endblock %}
+{% block page_title %}情感分析{% endblock %}
+
+{% block content %}
+<div id="sentiment-loading" class="loading-spinner">
+    <div class="spinner"></div>
+    <p>加载数据中...</p>
+</div>
+
+<div id="sentiment-content" style="display: none;">
+    <!-- Stat Cards -->
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-icon green">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                    <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                    <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <h3 id="stat-positive">--</h3>
+                <p>正面评价</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon orange">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="8" y1="15" x2="16" y2="15"></line>
+                    <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                    <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <h3 id="stat-neutral">--</h3>
+                <p>中性评价</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon pink">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M16 16s-1.5-2-4-2-4 2-4 2"></path>
+                    <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                    <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                </svg>
+            </div>
+            <div class="stat-info">
+                <h3 id="stat-negative">--</h3>
+                <p>负面评价</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Grid -->
+    <div class="chart-grid">
+        <!-- 情感倾向分布 -->
+        <div class="card">
+            <div class="card-header">情感倾向分布</div>
+            <div id="chart-sentiment-dist" class="chart-container"></div>
+        </div>
+
+        <!-- 各类型情感倾向 -->
+        <div class="card">
+            <div class="card-header">各类型情感倾向</div>
+            <div id="chart-genre-sentiment" class="chart-container"></div>
+        </div>
+    </div>
+
+    <!-- 情感得分与电影评分关系 - 两个表格并排 -->
+    <div class="card">
+        <div class="card-header">情感得分与电影评分关系</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <!-- 最正面描述 Top 10 -->
+            <div>
+                <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 12px; color: #166534;">
+                    最正面描述 Top 10
+                </h4>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>电影名称</th>
+                            <th>情感得分</th>
+                            <th>评分</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-positive-tbody"></tbody>
+                </table>
+            </div>
+
+            <!-- 最负面描述 Top 10 -->
+            <div>
+                <h4 style="font-size: 14px; font-weight: 600; margin: 0 0 12px; color: #991b1b;">
+                    最负面描述 Top 10
+                </h4>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>电影名称</th>
+                            <th>情感得分</th>
+                            <th>评分</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-negative-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var chartSentimentDist = null;
+    var chartGenreSentiment = null;
+
+    function showContent() {
+        document.getElementById('sentiment-loading').style.display = 'none';
+        document.getElementById('sentiment-content').style.display = '';
+    }
+
+    function populateStatCards(data) {
+        var dist = data.distribution || {};
+        document.getElementById('stat-positive').textContent =
+            (dist['正面'] != null) ? dist['正面'].toLocaleString() : '--';
+        document.getElementById('stat-neutral').textContent =
+            (dist['中性'] != null) ? dist['中性'].toLocaleString() : '--';
+        document.getElementById('stat-negative').textContent =
+            (dist['负面'] != null) ? dist['负面'].toLocaleString() : '--';
+    }
+
+    /* 情感倾向分布 - 环形图 */
+    function initSentimentDistChart(distribution) {
+        var dom = document.getElementById('chart-sentiment-dist');
+        chartSentimentDist = echarts.init(dom);
+
+        var chartData = [
+            { value: distribution['正面'] || 0, name: '正面' },
+            { value: distribution['中性'] || 0, name: '中性' },
+            { value: distribution['负面'] || 0, name: '负面' }
+        ];
+
+        var option = {
+            tooltip: {
+                trigger: 'item',
+                formatter: '{b}: {c} ({d}%)'
+            },
+            legend: {
+                bottom: '5%',
+                textStyle: { fontSize: 13 }
+            },
+            color: ['#22c55e', '#f59e0b', '#ef4444'],
+            series: [{
+                name: '情感倾向',
+                type: 'pie',
+                radius: ['40%', '70%'],
+                center: ['50%', '45%'],
+                avoidLabelOverlap: true,
+                itemStyle: {
+                    borderRadius: 8,
+                    borderColor: '#fff',
+                    borderWidth: 3
+                },
+                label: {
+                    show: true,
+                    formatter: '{b}\n{d}%',
+                    fontSize: 13,
+                    fontWeight: 500
+                },
+                emphasis: {
+                    label: { show: true, fontSize: 16, fontWeight: 'bold' },
+                    itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0, 0, 0, 0.2)' }
+                },
+                data: chartData
+            }]
+        };
+        chartSentimentDist.setOption(option);
+    }
+
+    /* 各类型情感倾向 - 柱状图 */
+    function initGenreSentimentChart(genreData) {
+        var dom = document.getElementById('chart-genre-sentiment');
+        chartGenreSentiment = echarts.init(dom);
+
+        var genres = genreData.labels || [];
+        var scores = genreData.values || [];
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var d = params[0];
+                    return d.name + '<br/>' + d.marker + ' 平均情感得分: <strong>' + Number(d.value).toFixed(3) + '</strong>';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '8%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: genres,
+                axisLabel: { fontSize: 11, rotate: 30 },
+                axisTick: { alignWithLabel: true }
+            },
+            yAxis: {
+                type: 'value',
+                name: '平均情感得分',
+                nameTextStyle: { fontSize: 12 },
+                axisLabel: { fontSize: 11 }
+            },
+            series: [{
+                name: '情感得分',
+                type: 'bar',
+                data: scores,
+                barWidth: '55%',
+                itemStyle: {
+                    color: function (params) {
+                        var value = params.value;
+                        var ratio;
+                        if (value >= 0) {
+                            ratio = Math.min(value / 1, 1);
+                            var r = Math.round(34 + (239 - 34) * (1 - ratio));
+                            var g = Math.round(197 + (68 - 197) * (1 - ratio));
+                            var b = Math.round(94 + (68 - 94) * (1 - ratio));
+                            return 'rgb(' + r + ',' + g + ',' + b + ')';
+                        } else {
+                            ratio = Math.min(Math.abs(value) / 1, 1);
+                            var r2 = Math.round(245 - (245 - 239) * (1 - ratio));
+                            var g2 = Math.round(158 - (158 - 68) * ratio);
+                            var b2 = Math.round(11 + (68 - 11) * (1 - ratio));
+                            return 'rgb(' + r2 + ',' + g2 + ',' + b2 + ')';
+                        }
+                    },
+                    borderRadius: [4, 4, 0, 0]
+                }
+            }]
+        };
+        chartGenreSentiment.setOption(option);
+    }
+
+    /* 填充表格 */
+    function populateTopTable(tbodyId, items, sentimentClass) {
+        var tbody = document.getElementById(tbodyId);
+        tbody.innerHTML = '';
+
+        items.forEach(function (item) {
+            var tr = document.createElement('tr');
+            var ratingClass = '';
+            var rating = parseFloat(item.rating);
+            if (rating >= 8) {
+                ratingClass = 'rating-high';
+            } else if (rating >= 6) {
+                ratingClass = 'rating-mid';
+            } else {
+                ratingClass = 'rating-low';
+            }
+
+            tr.innerHTML =
+                '<td>' + (item.name || item.title || '--') + '</td>' +
+                '<td><span class="sentiment-tag ' + sentimentClass + '">' +
+                    Number(item.score).toFixed(3) + '</span></td>' +
+                '<td><span class="rating-badge ' + ratingClass + '">' +
+                    (item.rating || '--') + '</span></td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function loadData() {
+        fetch('/api/sentiment-analysis')
+            .then(function (response) {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(function (data) {
+                populateStatCards(data);
+                showContent();
+
+                if (data.distribution) {
+                    initSentimentDistChart(data.distribution);
+                }
+                if (data.genre_sentiment) {
+                    initGenreSentimentChart(data.genre_sentiment);
+                }
+                if (data.top_positive) {
+                    populateTopTable('top-positive-tbody', data.top_positive, 'sentiment-positive');
+                }
+                if (data.top_negative) {
+                    populateTopTable('top-negative-tbody', data.top_negative, 'sentiment-negative');
+                }
+
+                requestAnimationFrame(handleResize);
+            })
+            .catch(function (error) {
+                console.error('Failed to load sentiment data:', error);
+                showContent();
+            });
+    }
+
+    function handleResize() {
+        if (chartSentimentDist) chartSentimentDist.resize();
+        if (chartGenreSentiment) chartGenreSentiment.resize();
+    }
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('DOMContentLoaded', loadData);
+})();
+</script>
+{% endblock %}

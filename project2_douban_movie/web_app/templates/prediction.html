@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+
+{% block title %}类型预测{% endblock %}
+{% block page_title %}类型预测{% endblock %}
+
+{% block content %}
+<!-- Input Card -->
+<div class="card">
+    <div class="card-header">输入电影剧情简介</div>
+    <textarea class="predict-textarea" id="predict-input"
+              placeholder="请输入电影剧情简介，系统将预测其可能的类型..."></textarea>
+    <div style="margin-top: 16px; display: flex; align-items: center; gap: 12px;">
+        <button class="btn btn-primary btn-lg" id="predict-btn" onclick="doPrediction()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            预测类型
+        </button>
+        <span id="predict-status" style="font-size: 13px; color: var(--text-secondary);"></span>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">试试这些示例：</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button class="btn btn-secondary btn-sm example-chip" onclick="fillExample(0)">
+                末日废土寻亲之旅
+            </button>
+            <button class="btn btn-secondary btn-sm example-chip" onclick="fillExample(1)">
+                跨越阶层的爱情故事
+            </button>
+            <button class="btn btn-secondary btn-sm example-chip" onclick="fillExample(2)">
+                乡村教育纪录片
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Result Card -->
+<div class="card" id="result-card" style="display: none;">
+    <div class="card-header">预测结果</div>
+
+    <!-- Main Prediction -->
+    <div style="text-align: center; padding: 20px 0;">
+        <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 8px;">预测类型</p>
+        <h2 id="result-genre" style="font-size: 36px; font-weight: 700; color: var(--primary); margin: 0 0 8px;"></h2>
+        <span id="result-confidence"
+              style="display: inline-block; padding: 4px 16px; border-radius: 20px; background: #dbeafe; color: var(--primary); font-size: 15px; font-weight: 600;"></span>
+    </div>
+
+    <!-- Probability Distribution -->
+    <div style="margin-top: 24px;">
+        <h4 style="font-size: 15px; font-weight: 600; margin-bottom: 16px;">各类型概率分布</h4>
+        <div id="result-bars"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var EXAMPLES = [
+        '一个年轻人在末日废土中寻找失散的家人，途中遇到各种变异生物和敌对势力',
+        '两个来自不同世界的人在一次偶然的相遇中坠入爱河，但家庭的反对让他们的爱情充满挑战',
+        '一部记录中国乡村教育现状的纪录片，跟踪拍摄了三位山区教师的日常生活'
+    ];
+
+    var BAR_COLORS = ['primary', 'info', 'success', 'warning', 'purple', 'danger'];
+
+    window.fillExample = function (index) {
+        var textarea = document.getElementById('predict-input');
+        textarea.value = EXAMPLES[index];
+        textarea.focus();
+    };
+
+    function setLoading(loading) {
+        var btn = document.getElementById('predict-btn');
+        var status = document.getElementById('predict-status');
+        if (loading) {
+            btn.disabled = true;
+            btn.innerHTML =
+                '<span class="spinner" style="width: 18px; height: 18px; border-width: 2px; margin-right: 6px;"></span>' +
+                '预测中...';
+            status.textContent = '正在分析文本特征...';
+        } else {
+            btn.disabled = false;
+            btn.innerHTML =
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>' +
+                '</svg>' +
+                '预测类型';
+            status.textContent = '';
+        }
+    }
+
+    function renderResults(data) {
+        var resultCard = document.getElementById('result-card');
+        var resultGenre = document.getElementById('result-genre');
+        var resultConfidence = document.getElementById('result-confidence');
+        var resultBars = document.getElementById('result-bars');
+
+        var predicted = data.predicted || data.genre || '--';
+        var confidence = data.confidence || data.probability || 0;
+        var probs = data.all_scores || data.probabilities || data.probs || {};
+
+        resultGenre.textContent = predicted;
+        resultConfidence.textContent = '置信度 ' + (confidence * 100).toFixed(1) + '%';
+
+        // Sort probabilities descending
+        var sorted = [];
+        for (var key in probs) {
+            if (probs.hasOwnProperty(key)) {
+                sorted.push({ genre: key, prob: probs[key] });
+            }
+        }
+        sorted.sort(function (a, b) { return b.prob - a.prob; });
+
+        resultBars.innerHTML = '';
+        var maxProb = sorted.length > 0 ? sorted[0].prob : 1;
+
+        sorted.forEach(function (item, index) {
+            var isPredicted = item.genre === predicted;
+            var pct = (item.prob * 100).toFixed(1);
+            var barWidth = Math.max((item.prob / maxProb) * 100, 2);
+            var colorClass = isPredicted ? 'primary' : BAR_COLORS[(index % BAR_COLORS.length)];
+
+            var row = document.createElement('div');
+            row.className = 'result-bar';
+            row.innerHTML =
+                '<span class="label">' + item.genre + '</span>' +
+                '<div class="bar">' +
+                    '<div class="bar-fill ' + colorClass + '" style="width: ' + barWidth + '%;">' +
+                        pct + '%' +
+                    '</div>' +
+                '</div>';
+
+            if (isPredicted) {
+                row.style.fontWeight = '600';
+            }
+
+            resultBars.appendChild(row);
+        });
+
+        resultCard.style.display = '';
+        resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    window.doPrediction = function () {
+        var text = document.getElementById('predict-input').value.trim();
+        if (!text) {
+            alert('请先输入电影剧情简介');
+            return;
+        }
+
+        setLoading(true);
+        document.getElementById('result-card').style.display = 'none';
+
+        fetch('/api/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text })
+        })
+        .then(function (res) {
+            if (!res.ok) throw new Error('Server error');
+            return res.json();
+        })
+        .then(function (data) {
+            setLoading(false);
+            renderResults(data);
+        })
+        .catch(function (err) {
+            setLoading(false);
+            console.error('Prediction failed:', err);
+            document.getElementById('predict-status').textContent = '预测失败，请重试';
+            document.getElementById('predict-status').style.color = 'var(--danger)';
+        });
+    };
+
+    // Allow Ctrl+Enter to submit
+    document.addEventListener('DOMContentLoaded', function () {
+        document.getElementById('predict-input').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                doPrediction();
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

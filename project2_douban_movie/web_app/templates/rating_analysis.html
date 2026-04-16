@@ -1,0 +1,499 @@
+{% extends 'base.html' %}
+
+{% block title %}评分分析{% endblock %}
+{% block page_title %}评分分析{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>评分分析</h2>
+    <p class="text-muted">豆瓣电影评分数据的统计分析与可视化</p>
+</div>
+
+<!-- Loading Spinner -->
+<div id="loading-spinner" class="loading-container">
+    <div class="spinner"></div>
+    <p>正在加载数据...</p>
+</div>
+
+<!-- Content (hidden until data loads) -->
+<div id="page-content" style="display: none;">
+
+    <!-- Statistics Row -->
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-label">平均评分</div>
+            <div class="stat-value" id="stat-mean">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">中位数</div>
+            <div class="stat-value" id="stat-median">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">标准差</div>
+            <div class="stat-value" id="stat-std">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">最低评分</div>
+            <div class="stat-value" id="stat-min">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">最高评分</div>
+            <div class="stat-value" id="stat-max">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">25% 分位数</div>
+            <div class="stat-value" id="stat-q25">--</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">75% 分位数</div>
+            <div class="stat-value" id="stat-q75">--</div>
+        </div>
+    </div>
+
+    <!-- Chart Grid -->
+    <div class="chart-grid">
+        <!-- Rating Distribution Histogram -->
+        <div class="chart-card">
+            <h3 class="chart-title">评分分布直方图</h3>
+            <div id="chart-rating-hist" class="chart-container"></div>
+        </div>
+
+        <!-- Genre Rating Boxplot -->
+        <div class="chart-card">
+            <h3 class="chart-title">各类型评分箱线图</h3>
+            <div id="chart-genre-boxplot" class="chart-container"></div>
+        </div>
+
+        <!-- Rating vs Votes Scatter -->
+        <div class="chart-card">
+            <h3 class="chart-title">评分与评分人数关系散点图</h3>
+            <div id="chart-rating-scatter" class="chart-container"></div>
+        </div>
+
+        <!-- Yearly Rating Trend -->
+        <div class="chart-card">
+            <h3 class="chart-title">年度平均评分趋势</h3>
+            <div id="chart-yearly-trend" class="chart-container"></div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // Chart instances
+    var chartHist = null;
+    var chartBoxplot = null;
+    var chartScatter = null;
+    var chartTrend = null;
+
+    function initCharts() {
+        if (chartHist) return;
+        chartHist = echarts.init(document.getElementById('chart-rating-hist'));
+        chartBoxplot = echarts.init(document.getElementById('chart-genre-boxplot'));
+        chartScatter = echarts.init(document.getElementById('chart-rating-scatter'));
+        chartTrend = echarts.init(document.getElementById('chart-yearly-trend'));
+    }
+
+    function resizeCharts() {
+        [chartHist, chartBoxplot, chartScatter, chartTrend].forEach(function (chart) {
+            if (chart) chart.resize();
+        });
+    }
+
+    // Responsive resize
+    window.addEventListener('resize', resizeCharts);
+
+    // Fetch data and render
+    fetch('/api/rating-analysis')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            document.getElementById('loading-spinner').style.display = 'none';
+            document.getElementById('page-content').style.display = 'block';
+            initCharts();
+
+            renderStats(data.stats);
+            renderHistogram(data.histogram, data.stats);
+            renderGenreBoxplot(data.genre_box);
+            renderScatter(data.scatter);
+            renderYearlyTrend(data.year_rating);
+            requestAnimationFrame(resizeCharts);
+        })
+        .catch(function (err) {
+            console.error('Failed to fetch rating analysis data:', err);
+            document.getElementById('loading-spinner').innerHTML =
+                '<p style="color:#e74c3c;">数据加载失败，请稍后重试。</p>';
+        });
+
+    // --- Render Statistics ---
+    function renderStats(stats) {
+        if (!stats) return;
+        document.getElementById('stat-mean').textContent = (stats.mean != null) ? stats.mean.toFixed(2) : '--';
+        document.getElementById('stat-median').textContent = (stats.median != null) ? stats.median.toFixed(2) : '--';
+        document.getElementById('stat-std').textContent = (stats.std != null) ? stats.std.toFixed(2) : '--';
+        document.getElementById('stat-min').textContent = (stats.min != null) ? stats.min.toFixed(1) : '--';
+        document.getElementById('stat-max').textContent = (stats.max != null) ? stats.max.toFixed(1) : '--';
+        document.getElementById('stat-q25').textContent = (stats.q25 != null) ? stats.q25.toFixed(2) : '--';
+        document.getElementById('stat-q75').textContent = (stats.q75 != null) ? stats.q75.toFixed(2) : '--';
+    }
+
+    // --- Rating Distribution Histogram ---
+    function renderHistogram(histogram, stats) {
+        if (!histogram) return;
+        var bins = histogram.labels || [];
+        var counts = histogram.values || [];
+        var avgRating = (stats && stats.mean != null) ? stats.mean : 0;
+
+        chartHist.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var p = params[0];
+                    return '评分区间: ' + p.name + '<br/>电影数量: ' + p.value;
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: bins,
+                name: '评分',
+                nameLocation: 'middle',
+                nameGap: 30,
+                axisLabel: { fontSize: 11 }
+            },
+            yAxis: {
+                type: 'value',
+                name: '电影数量',
+                nameLocation: 'middle',
+                nameGap: 50
+            },
+            series: [{
+                type: 'bar',
+                data: counts,
+                barWidth: '80%',
+                itemStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: '#4facfe' },
+                        { offset: 1, color: '#00f2fe' }
+                    ]),
+                    borderRadius: [4, 4, 0, 0]
+                },
+                markLine: {
+                    symbol: 'none',
+                    data: [{
+                        name: '平均评分',
+                        xAxis: avgRating.toFixed(1),
+                        lineStyle: {
+                            color: '#e74c3c',
+                            width: 2,
+                            type: 'dashed'
+                        },
+                        label: {
+                            formatter: '平均: {c}',
+                            position: 'end',
+                            color: '#e74c3c',
+                            fontSize: 12
+                        }
+                    }]
+                }
+            }]
+        });
+    }
+
+    // --- Genre Rating Boxplot (Horizontal Bar: min/Q1/median/Q3/max) ---
+    function renderGenreBoxplot(genreBox) {
+        if (!genreBox) return;
+        var genres = [];
+        var minVals = [];
+        var q1Vals = [];
+        var medianVals = [];
+        var q3Vals = [];
+        var maxVals = [];
+        var genreRatings = [];
+
+        Object.keys(genreBox).forEach(function (genre) {
+            var item = genreBox[genre];
+            genres.push(genre);
+            minVals.push(item.min);
+            q1Vals.push(item.q1 - item.min);
+            medianVals.push(item.median - item.q1);
+            q3Vals.push(item.q3 - item.median);
+            maxVals.push(item.max - item.q3);
+            genreRatings.push({ genre: genre, min: item.min, q1: item.q1, median: item.median, q3: item.q3, max: item.max });
+        });
+
+        chartBoxplot.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var idx = params[0].dataIndex;
+                    var g = genreRatings[idx];
+                    return '<strong>' + g.genre + '</strong><br/>' +
+                        '最小值: ' + g.min.toFixed(1) + '<br/>' +
+                        'Q1: ' + g.q1.toFixed(2) + '<br/>' +
+                        '中位数: ' + g.median.toFixed(2) + '<br/>' +
+                        'Q3: ' + g.q3.toFixed(2) + '<br/>' +
+                        '最大值: ' + g.max.toFixed(1);
+                }
+            },
+            grid: {
+                left: '12%',
+                right: '4%',
+                bottom: '3%',
+                top: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                name: '评分',
+                min: 0,
+                max: 10
+            },
+            yAxis: {
+                type: 'category',
+                data: genres,
+                axisLabel: { fontSize: 11 }
+            },
+            series: [
+                {
+                    name: '最小值',
+                    type: 'bar',
+                    stack: 'boxplot',
+                    itemStyle: { color: 'transparent' },
+                    data: minVals,
+                    emphasis: { itemStyle: { color: 'transparent' } }
+                },
+                {
+                    name: 'Q1区间',
+                    type: 'bar',
+                    stack: 'boxplot',
+                    itemStyle: {
+                        color: '#91cc75',
+                        borderColor: '#6aab57',
+                        borderWidth: 1
+                    },
+                    data: q1Vals
+                },
+                {
+                    name: '中位数区间',
+                    type: 'bar',
+                    stack: 'boxplot',
+                    itemStyle: {
+                        color: '#5470c6',
+                        borderColor: '#3e56a0',
+                        borderWidth: 1
+                    },
+                    data: medianVals
+                },
+                {
+                    name: 'Q3区间',
+                    type: 'bar',
+                    stack: 'boxplot',
+                    itemStyle: {
+                        color: '#91cc75',
+                        borderColor: '#6aab57',
+                        borderWidth: 1
+                    },
+                    data: q3Vals
+                },
+                {
+                    name: '最大值区间',
+                    type: 'bar',
+                    stack: 'boxplot',
+                    itemStyle: {
+                        color: '#fac858',
+                        borderColor: '#d4a843',
+                        borderWidth: 1
+                    },
+                    data: maxVals
+                }
+            ]
+        });
+    }
+
+    // --- Rating vs Votes Scatter Plot ---
+    function renderScatter(scatter) {
+        if (!scatter) return;
+        // scatter.data: [[log10_votes, rating, title, votes], ...]
+        var scatterData = scatter.data || [];
+
+        chartScatter.setOption({
+            tooltip: {
+                trigger: 'item',
+                formatter: function (params) {
+                    var d = params.data;
+                    return '<strong>' + (d[2] || '') + '</strong><br/>' +
+                        '评分: ' + d[1] + '<br/>' +
+                        '评分人数: ' + (d[3] != null ? d[3].toLocaleString() : '') + '<br/>' +
+                        'log10(人数): ' + d[0].toFixed(2);
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '12%',
+                bottom: '8%',
+                top: '5%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                name: 'log10(评分人数)',
+                nameLocation: 'middle',
+                nameGap: 30,
+                splitLine: { lineStyle: { type: 'dashed' } }
+            },
+            yAxis: {
+                type: 'value',
+                name: '评分',
+                nameLocation: 'middle',
+                nameGap: 40,
+                min: 0,
+                max: 10,
+                splitLine: { lineStyle: { type: 'dashed' } }
+            },
+            visualMap: {
+                min: 0,
+                max: 10,
+                dimension: 1,
+                orient: 'vertical',
+                right: 0,
+                top: 'center',
+                text: ['高分', '低分'],
+                calculable: true,
+                inRange: {
+                    color: ['#e74c3c', '#f39c12', '#2ecc71', '#3498db']
+                },
+                textStyle: { fontSize: 11 }
+            },
+            series: [{
+                type: 'scatter',
+                symbolSize: function (val) {
+                    return Math.max(3, Math.min(10, val[0] * 2));
+                },
+                data: scatterData,
+                animationDelay: function (idx) {
+                    return idx * 2;
+                }
+            }]
+        });
+    }
+
+    // --- Yearly Average Rating Trend ---
+    function renderYearlyTrend(trend) {
+        if (!trend) return;
+        var years = trend.years || [];
+        var avgRatings = trend.means || [];
+        var movieCounts = trend.counts || [];
+
+        chartTrend.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross' },
+                formatter: function (params) {
+                    var result = params[0].name + '年<br/>';
+                    params.forEach(function (p) {
+                        var marker = '<span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:' + p.color + ';"></span>';
+                        if (p.seriesName === '平均评分') {
+                            result += marker + p.seriesName + ': ' + p.value.toFixed(2) + '<br/>';
+                        } else {
+                            result += marker + p.seriesName + ': ' + p.value + '<br/>';
+                        }
+                    });
+                    return result;
+                }
+            },
+            legend: {
+                data: ['平均评分', '电影数量'],
+                top: 0
+            },
+            grid: {
+                left: '3%',
+                right: '5%',
+                bottom: '3%',
+                top: '12%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: years,
+                name: '年份',
+                nameLocation: 'middle',
+                nameGap: 30,
+                axisLabel: {
+                    fontSize: 11,
+                    rotate: 45
+                },
+                boundaryGap: false
+            },
+            yAxis: [
+                {
+                    type: 'value',
+                    name: '平均评分',
+                    nameLocation: 'middle',
+                    nameGap: 40,
+                    min: function (value) {
+                        return Math.floor(value.min * 10) / 10 - 0.5;
+                    },
+                    max: function (value) {
+                        return Math.ceil(value.max * 10) / 10 + 0.5;
+                    },
+                    splitLine: { lineStyle: { type: 'dashed' } }
+                },
+                {
+                    type: 'value',
+                    name: '电影数量',
+                    nameLocation: 'middle',
+                    nameGap: 50,
+                    splitLine: { show: false }
+                }
+            ],
+            series: [
+                {
+                    name: '平均评分',
+                    type: 'line',
+                    yAxisIndex: 0,
+                    data: avgRatings,
+                    smooth: true,
+                    symbol: 'circle',
+                    symbolSize: 4,
+                    lineStyle: {
+                        width: 2,
+                        color: '#5470c6'
+                    },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(84,112,198,0.4)' },
+                            { offset: 1, color: 'rgba(84,112,198,0.05)' }
+                        ])
+                    },
+                    itemStyle: { color: '#5470c6' }
+                },
+                {
+                    name: '电影数量',
+                    type: 'bar',
+                    yAxisIndex: 1,
+                    data: movieCounts,
+                    barWidth: '40%',
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(250,200,88,0.8)' },
+                            { offset: 1, color: 'rgba(250,200,88,0.2)' }
+                        ]),
+                        borderRadius: [2, 2, 0, 0]
+                    }
+                }
+            ]
+        });
+    }
+})();
+</script>
+{% endblock %}

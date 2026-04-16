@@ -1,0 +1,371 @@
+{% extends 'base.html' %}
+
+{% block title %}类型分析{% endblock %}
+{% block page_title %}类型分析{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>类型分析</h2>
+    <p class="text-muted">豆瓣电影类型数据的分布与关联分析</p>
+</div>
+
+<!-- Loading Spinner -->
+<div id="loading-spinner" class="loading-container">
+    <div class="spinner"></div>
+    <p>正在加载数据...</p>
+</div>
+
+<!-- Content (hidden until data loads) -->
+<div id="page-content" style="display: none;">
+
+    <!-- Chart Grid -->
+    <div class="chart-grid">
+        <!-- Genre Distribution -->
+        <div class="chart-card">
+            <h3 class="chart-title">电影类型分布</h3>
+            <div id="chart-genre-dist" class="chart-container"></div>
+        </div>
+
+        <!-- Genre Average Rating Ranking -->
+        <div class="chart-card">
+            <h3 class="chart-title">类型平均评分排行</h3>
+            <div id="chart-genre-rating" class="chart-container"></div>
+        </div>
+
+        <!-- Genre-Year Heatmap -->
+        <div class="chart-card">
+            <h3 class="chart-title">类型年份热力图</h3>
+            <div id="chart-genre-heatmap" class="chart-container"></div>
+        </div>
+
+        <!-- Common Genre Combinations -->
+        <div class="chart-card">
+            <h3 class="chart-title">常见类型组合 Top 20</h3>
+            <div id="chart-genre-combo" class="chart-container"></div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // Chart instances
+    var chartDist = null;
+    var chartRating = null;
+    var chartHeatmap = null;
+    var chartCombo = null;
+
+    function initCharts() {
+        if (chartDist) return;
+        chartDist = echarts.init(document.getElementById('chart-genre-dist'));
+        chartRating = echarts.init(document.getElementById('chart-genre-rating'));
+        chartHeatmap = echarts.init(document.getElementById('chart-genre-heatmap'));
+        chartCombo = echarts.init(document.getElementById('chart-genre-combo'));
+    }
+
+    function resizeCharts() {
+        [chartDist, chartRating, chartHeatmap, chartCombo].forEach(function (chart) {
+            if (chart) chart.resize();
+        });
+    }
+
+    // Responsive resize
+    window.addEventListener('resize', resizeCharts);
+
+    // Fetch data and render
+    fetch('/api/genre-analysis')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            document.getElementById('loading-spinner').style.display = 'none';
+            document.getElementById('page-content').style.display = 'block';
+            initCharts();
+
+            renderGenreDist(data.distribution);
+            renderGenreRating(data.avg_rating);
+            renderGenreHeatmap(data.heatmap);
+            renderGenreCombo(data.combos);
+            requestAnimationFrame(resizeCharts);
+        })
+        .catch(function (err) {
+            console.error('Failed to fetch genre analysis data:', err);
+            document.getElementById('loading-spinner').innerHTML =
+                '<p style="color:#e74c3c;">数据加载失败，请稍后重试。</p>';
+        });
+
+    // --- Genre Distribution (Horizontal Bar - Top 20) ---
+    function renderGenreDist(dist) {
+        if (!dist) return;
+        var genres = dist.labels || [];
+        var counts = dist.values || [];
+
+        // Take top 20 and reverse for horizontal bar (bottom-to-top display)
+        var top20Genres = genres.slice(0, 20).reverse();
+        var top20Counts = counts.slice(0, 20).reverse();
+        var maxCount = Math.max.apply(null, top20Counts);
+
+        chartDist.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var p = params[0];
+                    return '<strong>' + p.name + '</strong><br/>电影数量: ' + p.value.toLocaleString();
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '10%',
+                bottom: '3%',
+                top: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                name: '电影数量',
+                nameLocation: 'middle',
+                nameGap: 30
+            },
+            yAxis: {
+                type: 'category',
+                data: top20Genres,
+                axisLabel: { fontSize: 11 }
+            },
+            series: [{
+                type: 'bar',
+                data: top20Counts,
+                barWidth: '60%',
+                itemStyle: {
+                    color: function (params) {
+                        var ratio = params.value / maxCount;
+                        var r = Math.round(84 + (250 - 84) * (1 - ratio));
+                        var g = Math.round(112 + (200 - 112) * (1 - ratio));
+                        var b = Math.round(198 + (88 - 198) * (1 - ratio));
+                        return 'rgb(' + r + ',' + g + ',' + b + ')';
+                    },
+                    borderRadius: [0, 4, 4, 0]
+                },
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: function (params) {
+                        return params.value.toLocaleString();
+                    },
+                    fontSize: 11,
+                    color: '#555'
+                }
+            }]
+        });
+    }
+
+    // --- Genre Average Rating Ranking ---
+    function renderGenreRating(ratingData) {
+        if (!ratingData) return;
+        var genres = (ratingData.labels || []).slice().reverse();
+        var ratings = (ratingData.values || []).slice().reverse();
+        var minRating = Math.min.apply(null, ratings);
+        var maxRating = Math.max.apply(null, ratings);
+
+        chartRating.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var p = params[0];
+                    return '<strong>' + p.name + '</strong><br/>平均评分: ' + p.value.toFixed(2);
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '8%',
+                bottom: '3%',
+                top: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                name: '平均评分',
+                nameLocation: 'middle',
+                nameGap: 30,
+                min: function (value) {
+                    return Math.floor(value.min * 10) / 10 - 0.5;
+                },
+                max: 10
+            },
+            yAxis: {
+                type: 'category',
+                data: genres,
+                axisLabel: { fontSize: 11 }
+            },
+            visualMap: {
+                show: false,
+                min: minRating,
+                max: maxRating,
+                dimension: 0,
+                inRange: {
+                    color: ['#e74c3c', '#f39c12', '#f1c40f', '#2ecc71', '#27ae60']
+                },
+                seriesIndex: 0
+            },
+            series: [{
+                type: 'bar',
+                data: ratings,
+                barWidth: '60%',
+                itemStyle: {
+                    borderRadius: [0, 4, 4, 0]
+                },
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: function (params) {
+                        return params.value.toFixed(2);
+                    },
+                    fontSize: 11,
+                    color: '#555'
+                }
+            }]
+        });
+    }
+
+    // --- Genre-Year Heatmap ---
+    function renderGenreHeatmap(heatmapData) {
+        if (!heatmapData) return;
+        var years = heatmapData.years || [];
+        var genres = heatmapData.genres || [];
+        var data = heatmapData.data || [];
+        // data: [[yearIndex, genreIndex, count], ...]
+
+        var maxVal = 0;
+        data.forEach(function (d) {
+            if (d[2] > maxVal) maxVal = d[2];
+        });
+
+        chartHeatmap.setOption({
+            tooltip: {
+                position: 'top',
+                formatter: function (params) {
+                    var d = params.data;
+                    return '<strong>' + genres[d[1]] + '</strong><br/>' +
+                        years[d[0]] + '年<br/>' +
+                        '电影数量: ' + d[2];
+                }
+            },
+            grid: {
+                left: '12%',
+                right: '5%',
+                bottom: '12%',
+                top: '3%'
+            },
+            xAxis: {
+                type: 'category',
+                data: years,
+                name: '年份',
+                nameLocation: 'middle',
+                nameGap: 35,
+                splitArea: { show: true },
+                axisLabel: {
+                    fontSize: 10,
+                    rotate: 45
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: genres,
+                splitArea: { show: true },
+                axisLabel: { fontSize: 10 }
+            },
+            visualMap: {
+                min: 0,
+                max: maxVal || 100,
+                calculable: true,
+                orient: 'horizontal',
+                left: 'center',
+                bottom: 0,
+                text: ['多', '少'],
+                inRange: {
+                    color: ['#f7f7f7', '#d4e6f1', '#7fb3d8', '#2980b9', '#1a5276']
+                },
+                textStyle: { fontSize: 11 }
+            },
+            series: [{
+                type: 'heatmap',
+                data: data,
+                label: { show: false },
+                emphasis: {
+                    itemStyle: {
+                        shadowBlur: 10,
+                        shadowColor: 'rgba(0,0,0,0.5)'
+                    }
+                }
+            }]
+        });
+    }
+
+    // --- Common Genre Combinations Top 20 ---
+    function renderGenreCombo(comboData) {
+        if (!comboData) return;
+        var labels = (comboData.labels || []).slice(0, 20).reverse();
+        var counts = (comboData.values || []).slice(0, 20).reverse();
+
+        var colorPalette = [
+            '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
+            '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#5cb8a8',
+            '#c94d6e', '#4992b0', '#d48265', '#749f83', '#ca8622',
+            '#bda29a', '#6e7074', '#546570', '#c4ccd3', '#61a0a8'
+        ];
+
+        chartCombo.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var p = params[0];
+                    return '<strong>' + p.name + '</strong><br/>出现次数: ' + p.value.toLocaleString();
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '8%',
+                bottom: '3%',
+                top: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'value',
+                name: '出现次数',
+                nameLocation: 'middle',
+                nameGap: 30
+            },
+            yAxis: {
+                type: 'category',
+                data: labels,
+                axisLabel: { fontSize: 10 }
+            },
+            series: [{
+                type: 'bar',
+                data: counts.map(function (val, idx) {
+                    return {
+                        value: val,
+                        itemStyle: {
+                            color: colorPalette[idx % colorPalette.length],
+                            borderRadius: [0, 4, 4, 0]
+                        }
+                    };
+                }),
+                barWidth: '60%',
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: function (params) {
+                        return params.value.toLocaleString();
+                    },
+                    fontSize: 10,
+                    color: '#555'
+                }
+            }]
+        });
+    }
+})();
+</script>
+{% endblock %}

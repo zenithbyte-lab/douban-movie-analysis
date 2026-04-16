@@ -1,0 +1,8 @@
+pandas
+numpy
+matplotlib
+beautifulsoup4
+selenium
+snownlp
+jieba
+wordcloud

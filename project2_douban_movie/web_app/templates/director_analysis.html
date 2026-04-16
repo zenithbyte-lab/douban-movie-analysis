@@ -1,0 +1,358 @@
+{% extends 'base.html' %}
+
+{% block title %}导演分析 - 豆瓣电影数据分析系统{% endblock %}
+
+{% block page_title %}导演分析{% endblock %}
+
+{% block content %}
+<div class="chart-grid">
+    <!-- 最多作品导演 Top 20 -->
+    <div class="card">
+        <div class="card-header">
+            <span>最多作品导演 Top 20</span>
+            <span class="badge bg-primary">按作品数</span>
+        </div>
+        <div id="loading-prolific" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-prolific" class="chart-container tall" style="display:none;"></div>
+    </div>
+
+    <!-- 最高评分导演 Top 20 -->
+    <div class="card">
+        <div class="card-header">
+            <span>最高评分导演 Top 20</span>
+            <span class="badge bg-success">至少3部作品</span>
+        </div>
+        <div id="loading-top-rated" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-top-rated" class="chart-container tall" style="display:none;"></div>
+    </div>
+
+    <!-- 最受欢迎导演 Top 20 -->
+    <div class="card">
+        <div class="card-header">
+            <span>最受欢迎导演 Top 20</span>
+            <span class="badge bg-warning text-dark">按总投票数</span>
+        </div>
+        <div id="loading-popular" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-popular" class="chart-container tall" style="display:none;"></div>
+    </div>
+
+    <!-- 导演评分 vs 作品数量 -->
+    <div class="card">
+        <div class="card-header">
+            <span>导演评分 vs 作品数量</span>
+            <span class="badge bg-info">至少3部作品</span>
+        </div>
+        <div id="loading-scatter" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-scatter" class="chart-container tall" style="display:none;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var chartProlific = null;
+    var chartTopRated = null;
+    var chartPopular = null;
+    var chartScatter = null;
+
+    function getRatingColor(rating) {
+        if (rating >= 8.0) return '#22c55e';
+        if (rating >= 7.0) return '#84cc16';
+        if (rating >= 6.0) return '#f59e0b';
+        if (rating >= 5.0) return '#f97316';
+        return '#ef4444';
+    }
+
+    function formatWan(num) {
+        if (num >= 10000) {
+            return (num / 10000).toFixed(1) + '万';
+        }
+        return num.toLocaleString();
+    }
+
+    function showChart(chartId, loadingId) {
+        document.getElementById(loadingId).style.display = 'none';
+        document.getElementById(chartId).style.display = 'block';
+    }
+
+    function stabilizeChart(chart) {
+        requestAnimationFrame(function() { chart.resize(); });
+        setTimeout(function() { chart.resize(); }, 80);
+    }
+
+    function initProlificChart(data) {
+        showChart('chart-prolific', 'loading-prolific');
+        chartProlific = echarts.init(document.getElementById('chart-prolific'));
+
+        var directors = data.map(function(d) { return d.name; }).reverse();
+        var counts = data.map(function(d) { return d.count; }).reverse();
+        var ratings = data.map(function(d) { return d.avg_rating; }).reverse();
+        var colors = ratings.map(function(r) { return getRatingColor(r); });
+
+        chartProlific.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    var idx = params[0].dataIndex;
+                    return '<strong>' + directors[idx] + '</strong><br/>' +
+                           '作品数量: ' + counts[idx] + ' 部<br/>' +
+                           '平均评分: ' + ratings[idx].toFixed(1) + ' 分';
+                }
+            },
+            grid: { left: 120, right: 40, top: 20, bottom: 30 },
+            xAxis: {
+                type: 'value',
+                name: '作品数量',
+                nameTextStyle: { color: '#64748b', fontSize: 12 }
+            },
+            yAxis: {
+                type: 'category',
+                data: directors,
+                axisLabel: { fontSize: 12, color: '#334155' }
+            },
+            series: [{
+                type: 'bar',
+                data: counts.map(function(val, i) {
+                    return { value: val, itemStyle: { color: colors[i] } };
+                }),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    fontSize: 11,
+                    color: '#64748b',
+                    formatter: '{c} 部'
+                }
+            }]
+        });
+        stabilizeChart(chartProlific);
+    }
+
+    function initTopRatedChart(data) {
+        showChart('chart-top-rated', 'loading-top-rated');
+        chartTopRated = echarts.init(document.getElementById('chart-top-rated'));
+
+        var filtered = data.filter(function(d) { return d.count >= 3; });
+        filtered.sort(function(a, b) { return b.avg_rating - a.avg_rating; });
+        filtered = filtered.slice(0, 20);
+
+        var directors = filtered.map(function(d) { return d.name; }).reverse();
+        var ratings = filtered.map(function(d) { return d.avg_rating; }).reverse();
+        var counts = filtered.map(function(d) { return d.count; }).reverse();
+        var colors = ratings.map(function(r) { return getRatingColor(r); });
+
+        chartTopRated.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    var idx = params[0].dataIndex;
+                    return '<strong>' + directors[idx] + '</strong><br/>' +
+                           '平均评分: ' + ratings[idx].toFixed(1) + ' 分<br/>' +
+                           '作品数量: ' + counts[idx] + ' 部';
+                }
+            },
+            grid: { left: 120, right: 60, top: 20, bottom: 30 },
+            xAxis: {
+                type: 'value',
+                name: '平均评分',
+                min: function(value) { return Math.floor(value.min * 10) / 10 - 0.5; },
+                max: 10,
+                nameTextStyle: { color: '#64748b', fontSize: 12 }
+            },
+            yAxis: {
+                type: 'category',
+                data: directors,
+                axisLabel: { fontSize: 12, color: '#334155' }
+            },
+            series: [{
+                type: 'bar',
+                data: ratings.map(function(val, i) {
+                    return { value: val, itemStyle: { color: colors[i] } };
+                }),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    fontSize: 11,
+                    color: '#64748b',
+                    formatter: function(params) {
+                        return params.value.toFixed(1) + ' 分';
+                    }
+                }
+            }]
+        });
+        stabilizeChart(chartTopRated);
+    }
+
+    function initPopularChart(data) {
+        showChart('chart-popular', 'loading-popular');
+        chartPopular = echarts.init(document.getElementById('chart-popular'));
+
+        var sorted = data.slice().sort(function(a, b) { return b.total_votes - a.total_votes; });
+        sorted = sorted.slice(0, 20);
+
+        var directors = sorted.map(function(d) { return d.name; }).reverse();
+        var votes = sorted.map(function(d) { return d.total_votes; }).reverse();
+        var ratings = sorted.map(function(d) { return d.avg_rating; }).reverse();
+        var counts = sorted.map(function(d) { return d.count; }).reverse();
+
+        chartPopular.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    var idx = params[0].dataIndex;
+                    return '<strong>' + directors[idx] + '</strong><br/>' +
+                           '总投票数: ' + formatWan(votes[idx]) + '<br/>' +
+                           '作品数量: ' + counts[idx] + ' 部<br/>' +
+                           '平均评分: ' + ratings[idx].toFixed(1) + ' 分';
+                }
+            },
+            grid: { left: 120, right: 80, top: 20, bottom: 30 },
+            xAxis: {
+                type: 'value',
+                name: '总投票数',
+                nameTextStyle: { color: '#64748b', fontSize: 12 },
+                axisLabel: {
+                    formatter: function(val) { return formatWan(val); }
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: directors,
+                axisLabel: { fontSize: 12, color: '#334155' }
+            },
+            series: [{
+                type: 'bar',
+                data: votes.map(function(val, i) {
+                    return {
+                        value: val,
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                { offset: 0, color: '#6366f1' },
+                                { offset: 1, color: '#8b5cf6' }
+                            ])
+                        }
+                    };
+                }),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    fontSize: 11,
+                    color: '#64748b',
+                    formatter: function(params) {
+                        return formatWan(params.value);
+                    }
+                }
+            }]
+        });
+        stabilizeChart(chartPopular);
+    }
+
+    function initScatterChart(data) {
+        showChart('chart-scatter', 'loading-scatter');
+        chartScatter = echarts.init(document.getElementById('chart-scatter'));
+
+        var filtered = data.filter(function(d) { return d.count >= 3; });
+
+        var maxVotes = Math.max.apply(null, filtered.map(function(d) { return d.total_votes; }));
+        var scatterData = filtered.map(function(d) {
+            var symbolSize = Math.max(8, Math.sqrt(d.total_votes / maxVotes) * 50);
+            return {
+                value: [d.count, d.avg_rating, d.total_votes],
+                name: d.name,
+                symbolSize: symbolSize
+            };
+        });
+
+        chartScatter.setOption({
+            tooltip: {
+                trigger: 'item',
+                formatter: function(params) {
+                    return '<strong>' + params.name + '</strong><br/>' +
+                           '作品数量: ' + params.value[0] + ' 部<br/>' +
+                           '平均评分: ' + params.value[1].toFixed(1) + ' 分<br/>' +
+                           '总投票数: ' + formatWan(params.value[2]);
+                }
+            },
+            grid: { left: 60, right: 40, top: 30, bottom: 50 },
+            xAxis: {
+                type: 'value',
+                name: '作品数量',
+                nameLocation: 'center',
+                nameGap: 30,
+                nameTextStyle: { color: '#64748b', fontSize: 13 },
+                splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+            },
+            yAxis: {
+                type: 'value',
+                name: '平均评分',
+                nameLocation: 'center',
+                nameGap: 40,
+                nameTextStyle: { color: '#64748b', fontSize: 13 },
+                min: function(value) { return Math.floor(value.min * 10) / 10 - 0.5; },
+                max: 10,
+                splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+            },
+            series: [{
+                type: 'scatter',
+                data: scatterData,
+                itemStyle: {
+                    color: function(params) {
+                        return getRatingColor(params.value[1]);
+                    },
+                    opacity: 0.75,
+                    borderColor: '#fff',
+                    borderWidth: 1
+                },
+                emphasis: {
+                    itemStyle: { opacity: 1, shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' }
+                }
+            }]
+        });
+        stabilizeChart(chartScatter);
+    }
+
+    fetch('/api/director-analysis')
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+            var data = result.data || result;
+
+            initProlificChart(data.top_by_count || []);
+            initTopRatedChart(data.top_by_rating || []);
+            initPopularChart(data.top_by_votes || []);
+            initScatterChart(data.top_by_rating || []);
+        })
+        .catch(function(err) {
+            console.error('Failed to load director analysis data:', err);
+            ['loading-prolific', 'loading-top-rated', 'loading-popular', 'loading-scatter'].forEach(function(id) {
+                var el = document.getElementById(id);
+                el.innerHTML = '<span style="color:#ef4444;">数据加载失败，请稍后重试</span>';
+            });
+        });
+
+    window.addEventListener('resize', function() {
+        if (chartProlific) chartProlific.resize();
+        if (chartTopRated) chartTopRated.resize();
+        if (chartPopular) chartPopular.resize();
+        if (chartScatter) chartScatter.resize();
+    });
+})();
+</script>
+{% endblock %}

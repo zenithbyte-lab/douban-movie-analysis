@@ -1,0 +1,303 @@
+{% extends 'base.html' %}
+
+{% block title %}电影推荐{% endblock %}
+{% block page_title %}电影推荐{% endblock %}
+
+{% block content %}
+<!-- Search Card -->
+<div class="card">
+    <div class="card-header">搜索电影</div>
+    <div style="position: relative;">
+        <input type="text" id="search-input" class="search-input"
+               placeholder="搜索电影名称..."
+               autocomplete="off"
+               style="width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; outline: none; transition: border-color 0.2s;"
+               oninput="onSearchInput()" onfocus="onSearchFocus()">
+        <div class="movie-search-results" id="search-results"></div>
+    </div>
+</div>
+
+<!-- Selected Movie Card -->
+<div class="card" id="selected-card" style="display: none;">
+    <div class="card-header">
+        已选电影
+        <button class="btn btn-secondary btn-sm" onclick="clearSelection()">重新选择</button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 200px;">
+            <h3 id="selected-name" style="font-size: 20px; font-weight: 700; margin: 0 0 8px;"></h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-secondary);">
+                <span id="selected-rating-wrap">
+                    评分: <span id="selected-rating" class="rating-badge rating-high"></span>
+                </span>
+                <span>类型: <strong id="selected-genre"></strong></span>
+                <span>年份: <strong id="selected-year"></strong></span>
+                <span>导演: <strong id="selected-director"></strong></span>
+            </div>
+        </div>
+        <button class="btn btn-primary btn-lg" id="recommend-btn" onclick="getRecommendations()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"></path>
+                <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+            </svg>
+            获取推荐
+        </button>
+    </div>
+</div>
+
+<!-- Recommendations Card -->
+<div class="card" id="recommend-card" style="display: none;">
+    <div class="card-header">为您推荐以下相似电影</div>
+    <div id="recommend-loading" class="loading-spinner" style="display: none;">
+        <div class="spinner"></div>
+        <p>正在计算相似度...</p>
+    </div>
+    <div id="recommend-grid"
+         style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var searchTimer = null;
+    var selectedMovie = null;
+    var selectedIndex = null;
+
+    // Debounced search
+    window.onSearchInput = function () {
+        clearTimeout(searchTimer);
+        var q = document.getElementById('search-input').value.trim();
+        if (q.length < 1) {
+            hideResults();
+            return;
+        }
+        searchTimer = setTimeout(function () {
+            searchMovies(q);
+        }, 300);
+    };
+
+    window.onSearchFocus = function () {
+        var q = document.getElementById('search-input').value.trim();
+        if (q.length >= 1) {
+            var results = document.getElementById('search-results');
+            if (results.children.length > 0) {
+                results.classList.add('show');
+            }
+        }
+    };
+
+    function searchMovies(query) {
+        fetch('/api/search-movies?q=' + encodeURIComponent(query))
+            .then(function (res) {
+                if (!res.ok) throw new Error('Search failed');
+                return res.json();
+            })
+            .then(function (data) {
+                renderSearchResults(data.results || data);
+            })
+            .catch(function (err) {
+                console.error('Search error:', err);
+            });
+    }
+
+    function renderSearchResults(movies) {
+        var container = document.getElementById('search-results');
+        container.innerHTML = '';
+
+        if (!movies || movies.length === 0) {
+            container.innerHTML = '<div class="search-result-item" style="color: var(--text-secondary);">未找到匹配的电影</div>';
+            container.classList.add('show');
+            return;
+        }
+
+        movies.forEach(function (movie) {
+            var item = document.createElement('div');
+            item.className = 'search-result-item';
+            item.onclick = function () { selectMovie(movie); };
+
+            var rating = parseFloat(movie.rating);
+            var ratingClass = 'rating-mid';
+            if (rating >= 8) ratingClass = 'rating-high';
+            else if (rating < 6) ratingClass = 'rating-low';
+
+            item.innerHTML =
+                '<div class="movie-name">' + (movie.name || movie.title || '--') + '</div>' +
+                '<div class="movie-info">' +
+                    '<span class="rating-badge ' + ratingClass + '" style="margin-right: 8px;">' + (movie.rating || '--') + '</span>' +
+                    (movie.year ? '<span style="margin-right: 8px;">' + movie.year + '</span>' : '') +
+                    (movie.genre || movie.genres || '') +
+                '</div>';
+
+            container.appendChild(item);
+        });
+
+        container.classList.add('show');
+    }
+
+    function hideResults() {
+        document.getElementById('search-results').classList.remove('show');
+    }
+
+    function selectMovie(movie) {
+        selectedMovie = movie;
+        selectedIndex = movie.index != null ? movie.index : movie.movie_index;
+
+        document.getElementById('selected-name').textContent = movie.name || movie.title || '--';
+        document.getElementById('selected-genre').textContent = movie.genre || movie.genres || '--';
+        document.getElementById('selected-year').textContent = movie.year || '--';
+        document.getElementById('selected-director').textContent = movie.director || movie.directors || '--';
+
+        var ratingEl = document.getElementById('selected-rating');
+        var rating = parseFloat(movie.rating);
+        ratingEl.textContent = movie.rating || '--';
+        ratingEl.className = 'rating-badge';
+        if (rating >= 8) ratingEl.classList.add('rating-high');
+        else if (rating >= 6) ratingEl.classList.add('rating-mid');
+        else ratingEl.classList.add('rating-low');
+
+        document.getElementById('selected-card').style.display = '';
+        document.getElementById('recommend-card').style.display = 'none';
+        hideResults();
+        document.getElementById('search-input').value = movie.name || movie.title || '';
+    }
+
+    window.clearSelection = function () {
+        selectedMovie = null;
+        selectedIndex = null;
+        document.getElementById('selected-card').style.display = 'none';
+        document.getElementById('recommend-card').style.display = 'none';
+        document.getElementById('search-input').value = '';
+        document.getElementById('search-input').focus();
+    };
+
+    window.getRecommendations = function () {
+        if (selectedIndex == null) {
+            alert('请先选择一部电影');
+            return;
+        }
+
+        var btn = document.getElementById('recommend-btn');
+        btn.disabled = true;
+        btn.innerHTML =
+            '<span class="spinner" style="width: 18px; height: 18px; border-width: 2px; margin-right: 6px;"></span>' +
+            '推荐中...';
+
+        var recCard = document.getElementById('recommend-card');
+        recCard.style.display = '';
+        document.getElementById('recommend-loading').style.display = 'flex';
+        document.getElementById('recommend-grid').innerHTML = '';
+
+        fetch('/api/recommend', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ movie_index: selectedIndex })
+        })
+        .then(function (res) {
+            if (!res.ok) throw new Error('Recommend failed');
+            return res.json();
+        })
+        .then(function (data) {
+            btn.disabled = false;
+            btn.innerHTML =
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"></path>' +
+                    '<path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>' +
+                '</svg>' +
+                '获取推荐';
+
+            document.getElementById('recommend-loading').style.display = 'none';
+            renderRecommendations(data.recommendations || data);
+        })
+        .catch(function (err) {
+            console.error('Recommendation error:', err);
+            btn.disabled = false;
+            btn.innerHTML =
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                    '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"></path>' +
+                    '<path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>' +
+                '</svg>' +
+                '获取推荐';
+            document.getElementById('recommend-loading').innerHTML =
+                '<p style="color: var(--danger);">获取推荐失败，请重试。</p>';
+        });
+    };
+
+    function renderRecommendations(movies) {
+        var grid = document.getElementById('recommend-grid');
+        grid.innerHTML = '';
+
+        if (!movies || movies.length === 0) {
+            grid.innerHTML = '<p style="color: var(--text-secondary); padding: 20px;">暂无推荐结果</p>';
+            return;
+        }
+
+        movies.forEach(function (movie, index) {
+            var similarity = movie.similarity || movie.score || 0;
+            var simPct = (similarity * 100).toFixed(1);
+            var rating = parseFloat(movie.rating);
+            var ratingClass = 'rating-mid';
+            if (rating >= 8) ratingClass = 'rating-high';
+            else if (rating < 6) ratingClass = 'rating-low';
+
+            var card = document.createElement('div');
+            card.style.cssText =
+                'background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; ' +
+                'padding: 16px; transition: transform 0.2s, box-shadow 0.2s; cursor: default; ' +
+                'opacity: 0; transform: translateY(12px); animation: recFadeIn 0.4s forwards;';
+            card.style.animationDelay = (index * 0.06) + 's';
+
+            card.innerHTML =
+                '<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">' +
+                    '<h4 style="font-size: 15px; font-weight: 700; margin: 0; flex: 1;">' +
+                        (movie.name || movie.title || '--') +
+                    '</h4>' +
+                    '<span class="rating-badge ' + ratingClass + '" style="margin-left: 8px; flex-shrink: 0;">' +
+                        (movie.rating || '--') +
+                    '</span>' +
+                '</div>' +
+                '<div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">' +
+                    '<span style="margin-right: 12px;">' + (movie.genre || movie.genres || '--') + '</span>' +
+                    '<span>' + (movie.year || '--') + '</span>' +
+                '</div>' +
+                '<div style="margin-top: 8px;">' +
+                    '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">' +
+                        '<span style="font-size: 12px; color: var(--text-secondary);">相似度</span>' +
+                        '<span style="font-size: 12px; font-weight: 600; color: var(--primary);">' + simPct + '%</span>' +
+                    '</div>' +
+                    '<div style="width: 100%; height: 6px; background: #f1f5f9; border-radius: 3px; overflow: hidden;">' +
+                        '<div style="width: ' + simPct + '%; height: 100%; border-radius: 3px; transition: width 0.6s ease; ' +
+                            'background: linear-gradient(90deg, var(--primary), #60a5fa);"></div>' +
+                    '</div>' +
+                '</div>';
+
+            card.onmouseenter = function () {
+                card.style.transform = 'translateY(-2px)';
+                card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+            };
+            card.onmouseleave = function () {
+                card.style.transform = 'translateY(0)';
+                card.style.boxShadow = 'none';
+            };
+
+            grid.appendChild(card);
+        });
+    }
+
+    // Close search results when clicking outside
+    document.addEventListener('click', function (e) {
+        var searchArea = document.getElementById('search-input');
+        var results = document.getElementById('search-results');
+        if (!searchArea.contains(e.target) && !results.contains(e.target)) {
+            hideResults();
+        }
+    });
+
+    // Add fade-in animation keyframes
+    var style = document.createElement('style');
+    style.textContent = '@keyframes recFadeIn { to { opacity: 1; transform: translateY(0); } }';
+    document.head.appendChild(style);
+})();
+</script>
+{% endblock %}

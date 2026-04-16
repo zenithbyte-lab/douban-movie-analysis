@@ -1,0 +1,604 @@
+{% extends 'base.html' %}
+
+{% block title %}模型对比{% endblock %}
+{% block page_title %}模型对比{% endblock %}
+
+{% block content %}
+<div id="models-loading" class="loading-spinner">
+    <div class="spinner"></div>
+    <p>加载模型数据中...</p>
+</div>
+
+<div id="models-content" style="display: none;">
+    <!-- Stat Cards -->
+    <div class="stat-grid" id="stat-cards-container"></div>
+
+    <!-- Tab Switcher -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="display: flex; border-bottom: 2px solid var(--border-color);">
+            <button class="tab-btn active" data-tab="baseline" onclick="switchTab('baseline')"
+                    style="flex: 1; padding: 14px 20px; border: none; background: none; font-size: 15px; font-weight: 600; cursor: pointer; border-bottom: 3px solid var(--primary); color: var(--primary); transition: all 0.2s;">
+                基线实验 (10分类)
+            </button>
+            <button class="tab-btn" data-tab="improved" onclick="switchTab('improved')"
+                    style="flex: 1; padding: 14px 20px; border: none; background: none; font-size: 15px; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-secondary); transition: all 0.2s;">
+                改进实验 (6分类)
+            </button>
+        </div>
+    </div>
+
+    <!-- Baseline Tab -->
+    <div id="tab-baseline" class="tab-panel">
+        <!-- Performance Comparison -->
+        <div class="card">
+            <div class="card-header">算法性能对比</div>
+            <div id="chart-perf-baseline" style="width: 100%; height: 420px;"></div>
+        </div>
+
+        <div class="chart-grid">
+            <!-- Training Time -->
+            <div class="card">
+                <div class="card-header">训练时间对比</div>
+                <div id="chart-time-baseline" style="width: 100%; height: 360px;"></div>
+            </div>
+
+            <!-- Cross Validation -->
+            <div class="card">
+                <div class="card-header">交叉验证得分</div>
+                <div id="chart-cv-baseline" style="width: 100%; height: 360px;"></div>
+            </div>
+        </div>
+
+        <!-- Confusion Matrix -->
+        <div class="card">
+            <div class="card-header">
+                混淆矩阵
+                <div style="display: flex; gap: 8px;">
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-baseline" value="svm_opt" checked onchange="switchCM('baseline', 'svm_opt')"> SVM优化
+                    </label>
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-baseline" value="nb" onchange="switchCM('baseline', 'nb')"> 朴素贝叶斯
+                    </label>
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-baseline" value="dt" onchange="switchCM('baseline', 'dt')"> 决策树
+                    </label>
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-baseline" value="svm" onchange="switchCM('baseline', 'svm')"> SVM
+                    </label>
+                </div>
+            </div>
+            <div id="chart-cm-baseline" style="width: 100%; height: 480px;"></div>
+        </div>
+
+        <!-- Detailed Metrics Table -->
+        <div class="card">
+            <div class="card-header">详细指标表格</div>
+            <div class="table-wrapper" style="overflow-x: auto;">
+                <table class="data-table" id="table-baseline">
+                    <thead>
+                        <tr>
+                            <th>指标</th>
+                            <th>朴素贝叶斯</th>
+                            <th>决策树</th>
+                            <th>SVM</th>
+                            <th>SVM (优化)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Improved Tab -->
+    <div id="tab-improved" class="tab-panel" style="display: none;">
+        <!-- Performance Comparison -->
+        <div class="card">
+            <div class="card-header">算法性能对比</div>
+            <div id="chart-perf-improved" style="width: 100%; height: 420px;"></div>
+        </div>
+
+        <div class="chart-grid">
+            <!-- Training Time -->
+            <div class="card">
+                <div class="card-header">训练时间对比</div>
+                <div id="chart-time-improved" style="width: 100%; height: 360px;"></div>
+            </div>
+
+            <!-- Cross Validation -->
+            <div class="card">
+                <div class="card-header">交叉验证得分</div>
+                <div id="chart-cv-improved" style="width: 100%; height: 360px;"></div>
+            </div>
+        </div>
+
+        <!-- Confusion Matrix -->
+        <div class="card">
+            <div class="card-header">
+                混淆矩阵
+                <div style="display: flex; gap: 8px;">
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-improved" value="svm_opt" checked onchange="switchCM('improved', 'svm_opt')"> SVM优化
+                    </label>
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-improved" value="nb" onchange="switchCM('improved', 'nb')"> 朴素贝叶斯
+                    </label>
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-improved" value="dt" onchange="switchCM('improved', 'dt')"> 决策树
+                    </label>
+                    <label style="font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                        <input type="radio" name="cm-improved" value="svm" onchange="switchCM('improved', 'svm')"> SVM
+                    </label>
+                </div>
+            </div>
+            <div id="chart-cm-improved" style="width: 100%; height: 480px;"></div>
+        </div>
+
+        <!-- Detailed Metrics Table -->
+        <div class="card">
+            <div class="card-header">详细指标表格</div>
+            <div class="table-wrapper" style="overflow-x: auto;">
+                <table class="data-table" id="table-improved">
+                    <thead>
+                        <tr>
+                            <th>指标</th>
+                            <th>朴素贝叶斯</th>
+                            <th>决策树</th>
+                            <th>SVM</th>
+                            <th>SVM (优化)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var COLOR_PALETTE = ['#5470c6', '#91cc75', '#fac858', '#ee6666'];
+    var MODEL_KEYS = ['nb', 'dt', 'svm', 'svm_opt'];
+    var MODEL_NAMES = ['朴素贝叶斯', '决策树', 'SVM', 'SVM (优化)'];
+    var METRIC_KEYS = ['acc', 'prec', 'rec', 'f1'];
+    var METRIC_NAMES = ['准确率', '精确率', '召回率', 'F1分数'];
+
+    var allData = null;
+    var charts = {};
+    var currentTab = 'baseline';
+
+    function showContent() {
+        document.getElementById('models-loading').style.display = 'none';
+        document.getElementById('models-content').style.display = '';
+    }
+
+    function buildStatCards(data) {
+        var container = document.getElementById('stat-cards-container');
+        var bl = data.baseline;
+        var im = data.improved;
+
+        var cards = [
+            { label: '基线数据集', value: bl ? bl.dataset_size : '--', icon: 'blue', sub: '电影总数' },
+            { label: '改进数据集', value: im ? im.dataset_size : '--', icon: 'green', sub: '电影总数' },
+            { label: '基线训练/测试', value: bl ? bl.train_size + ' / ' + bl.test_size : '--', icon: 'orange', sub: '样本划分' },
+            { label: '改进训练/测试', value: im ? im.train_size + ' / ' + im.test_size : '--', icon: 'purple', sub: '样本划分' },
+            { label: '基线特征数', value: bl ? bl.n_features : '--', icon: 'teal', sub: 'TF-IDF特征' },
+            { label: '改进特征数', value: im ? im.n_features : '--', icon: 'pink', sub: 'TF-IDF特征' }
+        ];
+
+        container.innerHTML = '';
+        cards.forEach(function (c) {
+            var div = document.createElement('div');
+            div.className = 'stat-card';
+            div.innerHTML =
+                '<div class="stat-icon ' + c.icon + '">' +
+                    '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                        '<rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>' +
+                        '<rect x="9" y="9" width="6" height="6"></rect>' +
+                        '<line x1="9" y1="1" x2="9" y2="4"></line>' +
+                        '<line x1="15" y1="1" x2="15" y2="4"></line>' +
+                        '<line x1="9" y1="20" x2="9" y2="23"></line>' +
+                        '<line x1="15" y1="20" x2="15" y2="23"></line>' +
+                    '</svg>' +
+                '</div>' +
+                '<div class="stat-info">' +
+                    '<h3>' + c.value + '</h3>' +
+                    '<p>' + c.label + ' - ' + c.sub + '</p>' +
+                '</div>';
+            container.appendChild(div);
+        });
+    }
+
+    function initPerfChart(expKey, expData) {
+        var dom = document.getElementById('chart-perf-' + expKey);
+        var chart = echarts.init(dom);
+        charts['perf-' + expKey] = chart;
+
+        var series = [];
+        MODEL_KEYS.forEach(function (mk, i) {
+            var m = expData[mk];
+            series.push({
+                name: MODEL_NAMES[i],
+                type: 'bar',
+                data: m ? [m.acc, m.prec, m.rec, m.f1] : [0, 0, 0, 0],
+                itemStyle: { color: COLOR_PALETTE[i], borderRadius: [4, 4, 0, 0] },
+                barGap: '10%'
+            });
+        });
+
+        chart.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var s = params[0].axisValueLabel + '<br/>';
+                    params.forEach(function (p) {
+                        s += p.marker + ' ' + p.seriesName + ': <strong>' + (p.value * 100).toFixed(2) + '%</strong><br/>';
+                    });
+                    return s;
+                }
+            },
+            legend: { top: 8, textStyle: { fontSize: 12 } },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '56px', containLabel: true },
+            xAxis: { type: 'category', data: METRIC_NAMES, axisLabel: { fontSize: 13 } },
+            yAxis: {
+                type: 'value',
+                name: '得分',
+                max: 1,
+                axisLabel: { formatter: function (v) { return (v * 100).toFixed(0) + '%'; } }
+            },
+            series: series
+        });
+    }
+
+    function initTimeChart(expKey, expData) {
+        var dom = document.getElementById('chart-time-' + expKey);
+        var chart = echarts.init(dom);
+        charts['time-' + expKey] = chart;
+
+        var times = MODEL_KEYS.map(function (mk) {
+            return (expData[mk] && expData[mk].time != null) ? expData[mk].time : 0;
+        });
+        var maxTime = Math.max.apply(null, times);
+        var useLog = maxTime > 0 && (maxTime / Math.max(Math.min.apply(null, times.filter(function (t) { return t > 0; })), 0.0001)) > 100;
+
+        chart.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function (params) {
+                    var p = params[0];
+                    return p.name + '<br/>训练时间: <strong>' + p.value.toFixed(4) + ' 秒</strong>';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
+            xAxis: { type: 'category', data: MODEL_NAMES, axisLabel: { fontSize: 12 } },
+            yAxis: {
+                type: useLog ? 'log' : 'value',
+                name: '时间 (秒)',
+                nameTextStyle: { fontSize: 12 },
+                axisLabel: { formatter: function (v) { return v.toFixed(3); } }
+            },
+            series: [{
+                name: '训练时间',
+                type: 'bar',
+                data: times,
+                barWidth: '50%',
+                itemStyle: {
+                    color: function (params) { return COLOR_PALETTE[params.dataIndex]; },
+                    borderRadius: [4, 4, 0, 0]
+                }
+            }]
+        });
+    }
+
+    function initCVChart(expKey, expData) {
+        var dom = document.getElementById('chart-cv-' + expKey);
+        var chart = echarts.init(dom);
+        charts['cv-' + expKey] = chart;
+
+        var means = [];
+        var upperBounds = [];
+        var lowerBounds = [];
+
+        MODEL_KEYS.forEach(function (mk) {
+            var m = expData[mk];
+            var mean = (m && m.cv_mean != null) ? m.cv_mean : 0;
+            var std = (m && m.cv_std != null) ? m.cv_std : 0;
+            means.push(mean);
+            upperBounds.push(mean + std);
+            lowerBounds.push(mean - std);
+        });
+
+        chart.setOption({
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    var idx = params[0].dataIndex;
+                    var m = expData[MODEL_KEYS[idx]];
+                    if (!m) return '';
+                    var cvMean = (m.cv_mean != null) ? m.cv_mean : 0;
+                    var cvStd = (m.cv_std != null) ? m.cv_std : 0;
+                    return MODEL_NAMES[idx] + '<br/>' +
+                        'CV均值: <strong>' + (cvMean * 100).toFixed(2) + '%</strong><br/>' +
+                        'CV标准差: <strong>' + (cvStd * 100).toFixed(2) + '%</strong>';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
+            xAxis: { type: 'category', data: MODEL_NAMES, axisLabel: { fontSize: 12 } },
+            yAxis: {
+                type: 'value',
+                name: 'CV得分',
+                axisLabel: { formatter: function (v) { return (v * 100).toFixed(0) + '%'; } }
+            },
+            series: [
+                {
+                    name: 'CV均值',
+                    type: 'bar',
+                    data: means,
+                    barWidth: '50%',
+                    itemStyle: {
+                        color: function (params) { return COLOR_PALETTE[params.dataIndex]; },
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    markPoint: {
+                        symbol: 'rect',
+                        symbolSize: [30, 3],
+                        label: { show: false },
+                        data: (function () {
+                            var points = [];
+                            MODEL_NAMES.forEach(function (name, i) {
+                                points.push({
+                                    coord: [i, upperBounds[i]],
+                                    itemStyle: { color: '#333' }
+                                });
+                                points.push({
+                                    coord: [i, lowerBounds[i]],
+                                    itemStyle: { color: '#333' }
+                                });
+                            });
+                            return points;
+                        })()
+                    }
+                },
+                {
+                    name: '上界',
+                    type: 'line',
+                    data: upperBounds,
+                    lineStyle: { width: 0 },
+                    symbol: 'none',
+                    silent: true,
+                    itemStyle: { color: 'transparent' }
+                },
+                {
+                    name: '下界',
+                    type: 'line',
+                    data: lowerBounds,
+                    lineStyle: { width: 0 },
+                    symbol: 'none',
+                    silent: true,
+                    itemStyle: { color: 'transparent' }
+                }
+            ]
+        });
+    }
+
+    function initCMChart(expKey, modelKey, expData) {
+        var dom = document.getElementById('chart-cm-' + expKey);
+        if (charts['cm-' + expKey]) {
+            charts['cm-' + expKey].dispose();
+        }
+        var chart = echarts.init(dom);
+        charts['cm-' + expKey] = chart;
+
+        var m = expData[modelKey];
+        if (!m || !m.cm) return;
+
+        var cm = m.cm;
+        var classes = expData.genres || expData.classes || [];
+        var n = classes.length;
+
+        var data = [];
+        var maxVal = 0;
+        for (var i = 0; i < cm.length; i++) {
+            for (var j = 0; j < cm[i].length; j++) {
+                data.push([j, i, cm[i][j]]);
+                if (cm[i][j] > maxVal) maxVal = cm[i][j];
+            }
+        }
+
+        chart.setOption({
+            tooltip: {
+                formatter: function (params) {
+                    var d = params.data;
+                    return '实际: ' + classes[d[1]] + '<br/>' +
+                           '预测: ' + classes[d[0]] + '<br/>' +
+                           '数量: <strong>' + d[2] + '</strong>';
+                }
+            },
+            grid: { left: '12%', right: '12%', bottom: '15%', top: '6%' },
+            xAxis: {
+                type: 'category',
+                data: classes,
+                name: '预测类型',
+                nameLocation: 'center',
+                nameGap: 36,
+                axisLabel: { fontSize: 11, rotate: classes.length > 6 ? 30 : 0 },
+                splitArea: { show: true }
+            },
+            yAxis: {
+                type: 'category',
+                data: classes,
+                name: '实际类型',
+                nameLocation: 'center',
+                nameGap: 70,
+                axisLabel: { fontSize: 11 },
+                splitArea: { show: true },
+                inverse: true
+            },
+            visualMap: {
+                min: 0,
+                max: maxVal || 1,
+                calculable: true,
+                orient: 'vertical',
+                right: '2%',
+                top: 'center',
+                inRange: {
+                    color: ['#f0f4ff', '#93b7e3', '#5470c6', '#2a3eb1', '#1a237e']
+                },
+                textStyle: { fontSize: 11 }
+            },
+            series: [{
+                name: '混淆矩阵',
+                type: 'heatmap',
+                data: data,
+                label: {
+                    show: true,
+                    fontSize: n > 8 ? 10 : 12,
+                    color: '#333',
+                    formatter: function (params) { return params.data[2]; }
+                },
+                emphasis: {
+                    itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' }
+                }
+            }]
+        });
+    }
+
+    function buildMetricsTable(expKey, expData) {
+        var tbody = document.querySelector('#table-' + expKey + ' tbody');
+        tbody.innerHTML = '';
+
+        var rows = [
+            { label: '准确率 (Accuracy)', key: 'acc', fmt: function (v) { return (v * 100).toFixed(2) + '%'; } },
+            { label: '精确率 (Precision)', key: 'prec', fmt: function (v) { return (v * 100).toFixed(2) + '%'; } },
+            { label: '召回率 (Recall)', key: 'rec', fmt: function (v) { return (v * 100).toFixed(2) + '%'; } },
+            { label: 'F1分数', key: 'f1', fmt: function (v) { return (v * 100).toFixed(2) + '%'; } },
+            { label: '训练时间 (秒)', key: 'time', fmt: function (v) { return v.toFixed(4); } },
+            { label: 'CV均值', key: 'cv_mean', fmt: function (v) { return (v * 100).toFixed(2) + '%'; } },
+            { label: 'CV标准差', key: 'cv_std', fmt: function (v) { return (v * 100).toFixed(2) + '%'; } }
+        ];
+
+        rows.forEach(function (row) {
+            var tr = document.createElement('tr');
+            var html = '<td style="font-weight: 600;">' + row.label + '</td>';
+
+            var values = MODEL_KEYS.map(function (mk) {
+                var m = expData[mk];
+                return (m && m[row.key] != null) ? m[row.key] : null;
+            });
+
+            var bestIdx = -1;
+            if (row.key !== 'time' && row.key !== 'cv_std') {
+                var best = -Infinity;
+                values.forEach(function (v, i) {
+                    if (v !== null && v > best) { best = v; bestIdx = i; }
+                });
+            } else if (row.key === 'time') {
+                var best = Infinity;
+                values.forEach(function (v, i) {
+                    if (v !== null && v < best) { best = v; bestIdx = i; }
+                });
+            } else if (row.key === 'cv_std') {
+                var best = Infinity;
+                values.forEach(function (v, i) {
+                    if (v !== null && v < best) { best = v; bestIdx = i; }
+                });
+            }
+
+            values.forEach(function (v, i) {
+                var val = v !== null ? row.fmt(v) : '--';
+                if (i === bestIdx) {
+                    html += '<td><strong style="color: var(--primary);">' + val + '</strong></td>';
+                } else {
+                    html += '<td>' + val + '</td>';
+                }
+            });
+
+            tr.innerHTML = html;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function renderExperiment(expKey) {
+        var expData = allData[expKey];
+        if (!expData) return;
+
+        initPerfChart(expKey, expData);
+        initTimeChart(expKey, expData);
+        initCVChart(expKey, expData);
+        initCMChart(expKey, 'svm_opt', expData);
+        buildMetricsTable(expKey, expData);
+    }
+
+    window.switchTab = function (tab) {
+        currentTab = tab;
+
+        document.querySelectorAll('.tab-btn').forEach(function (btn) {
+            if (btn.dataset.tab === tab) {
+                btn.style.borderBottomColor = 'var(--primary)';
+                btn.style.color = 'var(--primary)';
+                btn.classList.add('active');
+            } else {
+                btn.style.borderBottomColor = 'transparent';
+                btn.style.color = 'var(--text-secondary)';
+                btn.classList.remove('active');
+            }
+        });
+
+        document.querySelectorAll('.tab-panel').forEach(function (panel) {
+            panel.style.display = 'none';
+        });
+        document.getElementById('tab-' + tab).style.display = '';
+
+        setTimeout(function () {
+            Object.keys(charts).forEach(function (key) {
+                if (key.indexOf(tab) !== -1 && charts[key]) {
+                    charts[key].resize();
+                }
+            });
+        }, 50);
+    };
+
+    window.switchCM = function (expKey, modelKey) {
+        if (!allData || !allData[expKey]) return;
+        initCMChart(expKey, modelKey, allData[expKey]);
+    };
+
+    function loadData() {
+        fetch('/api/model-results')
+            .then(function (res) {
+                if (!res.ok) throw new Error('Network error');
+                return res.json();
+            })
+            .then(function (data) {
+                allData = data;
+                buildStatCards(data);
+                showContent();
+                renderExperiment('baseline');
+                renderExperiment('improved');
+                requestAnimationFrame(handleResize);
+            })
+            .catch(function (err) {
+                console.error('Failed to load model results:', err);
+                document.getElementById('models-loading').innerHTML =
+                    '<p style="color: var(--danger);">加载数据失败，请刷新页面重试。</p>';
+            });
+    }
+
+    function handleResize() {
+        Object.keys(charts).forEach(function (key) {
+            if (charts[key] && key.indexOf(currentTab) !== -1) {
+                charts[key].resize();
+            }
+        });
+    }
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('DOMContentLoaded', loadData);
+})();
+</script>
+{% endblock %}

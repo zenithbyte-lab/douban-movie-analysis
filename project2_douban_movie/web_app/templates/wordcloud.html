@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+
+{% block title %}词云分析{% endblock %}
+{% block page_title %}词云分析{% endblock %}
+
+{% block content %}
+<div id="wordcloud-loading" class="loading-spinner">
+    <div class="spinner"></div>
+    <p>加载数据中...</p>
+</div>
+
+<div id="wordcloud-content" style="display: none;">
+    <!-- 词云图 -->
+    <div class="card">
+        <div class="card-header">词云可视化</div>
+        <div id="chart-wordcloud" style="width: 100%; height: 600px;"></div>
+    </div>
+
+    <!-- 高频词汇 Top 30 -->
+    <div class="card">
+        <div class="card-header">高频词汇 Top 30</div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 60px;">排名</th>
+                    <th style="width: 120px;">词汇</th>
+                    <th style="width: 100px;">频次</th>
+                    <th>频次分布</th>
+                </tr>
+            </thead>
+            <tbody id="top-words-tbody"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+<script>
+(function () {
+    var chartWordcloud = null;
+
+    var WORD_COLORS = [
+        '#3b82f6', '#2563eb', '#1d4ed8',
+        '#7c3aed', '#6d28d9', '#5b21b6',
+        '#0d9488', '#0f766e', '#115e59',
+        '#4f46e5', '#4338ca', '#3730a3',
+        '#0891b2', '#0e7490', '#155e75',
+        '#6366f1', '#8b5cf6', '#a78bfa'
+    ];
+
+    function showContent() {
+        document.getElementById('wordcloud-loading').style.display = 'none';
+        document.getElementById('wordcloud-content').style.display = '';
+    }
+
+    function getRandomColor() {
+        return WORD_COLORS[Math.floor(Math.random() * WORD_COLORS.length)];
+    }
+
+    /* 词云图 */
+    function initWordcloudChart(words) {
+        var dom = document.getElementById('chart-wordcloud');
+        chartWordcloud = echarts.init(dom);
+
+        var wordData = words.map(function (item) {
+            return {
+                name: item.name || item.word || item[0],
+                value: item.value || item.frequency || item.count || item[1]
+            };
+        });
+
+        var option = {
+            tooltip: {
+                show: true,
+                formatter: function (params) {
+                    return '<strong>' + params.name + '</strong><br/>频次: ' + params.value;
+                }
+            },
+            series: [{
+                type: 'wordCloud',
+                shape: 'circle',
+                gridSize: 8,
+                sizeRange: [14, 80],
+                rotationRange: [-45, 45],
+                rotationStep: 15,
+                width: '90%',
+                height: '90%',
+                drawOutOfBound: false,
+                layoutAnimation: true,
+                textStyle: {
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
+                    fontWeight: 'bold',
+                    color: function () {
+                        return getRandomColor();
+                    }
+                },
+                emphasis: {
+                    focus: 'self',
+                    textStyle: {
+                        shadowBlur: 10,
+                        shadowColor: 'rgba(0, 0, 0, 0.25)',
+                        fontSize: 20
+                    }
+                },
+                data: wordData
+            }]
+        };
+        chartWordcloud.setOption(option);
+    }
+
+    /* 高频词汇表格 */
+    function populateTopWords(words) {
+        var tbody = document.getElementById('top-words-tbody');
+        tbody.innerHTML = '';
+
+        var topWords = words.slice(0, 30);
+        var maxFreq = topWords.length > 0 ? (topWords[0].value || topWords[0].frequency || topWords[0].count || topWords[0][1]) : 1;
+
+        topWords.forEach(function (item, index) {
+            var word = item.name || item.word || item[0];
+            var freq = item.value || item.frequency || item.count || item[1];
+            var barWidth = Math.max((freq / maxFreq) * 100, 2);
+
+            var barColor;
+            if (index < 5) {
+                barColor = '#3b82f6';
+            } else if (index < 10) {
+                barColor = '#6366f1';
+            } else if (index < 20) {
+                barColor = '#0d9488';
+            } else {
+                barColor = '#94a3b8';
+            }
+
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td style="font-weight: 600; color: ' + (index < 3 ? '#3b82f6' : 'inherit') + ';">' + (index + 1) + '</td>' +
+                '<td style="font-weight: 500;">' + word + '</td>' +
+                '<td>' + freq.toLocaleString() + '</td>' +
+                '<td>' +
+                    '<div style="display: flex; align-items: center; gap: 8px;">' +
+                        '<div style="width: ' + barWidth + '%; height: 20px; background: ' + barColor + '; ' +
+                            'border-radius: 4px; min-width: 4px; transition: width 0.6s ease;"></div>' +
+                        '<span style="font-size: 12px; color: #64748b; white-space: nowrap;">' + freq.toLocaleString() + '</span>' +
+                    '</div>' +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function loadData() {
+        fetch('/api/wordcloud-data')
+            .then(function (response) {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(function (data) {
+                var words = data.words || data;
+                showContent();
+
+                if (words && words.length > 0) {
+                    initWordcloudChart(words);
+                    populateTopWords(words);
+                }
+
+                requestAnimationFrame(handleResize);
+            })
+            .catch(function (error) {
+                console.error('Failed to load wordcloud data:', error);
+                showContent();
+            });
+    }
+
+    function handleResize() {
+        if (chartWordcloud) chartWordcloud.resize();
+    }
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('DOMContentLoaded', loadData);
+})();
+</script>
+{% endblock %}

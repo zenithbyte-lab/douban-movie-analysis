@@ -1,0 +1,392 @@
+{% extends 'base.html' %}
+
+{% block title %}年份趋势分析{% endblock %}
+{% block page_title %}年份趋势分析{% endblock %}
+
+{% block content %}
+<div id="year-loading" class="loading-spinner">
+    <div class="spinner"></div>
+    <p>加载数据中...</p>
+</div>
+
+<div id="year-content" style="display: none;">
+    <div class="chart-grid">
+        <!-- 年度电影数量趋势 -->
+        <div class="card">
+            <div class="card-header">年度电影数量趋势</div>
+            <div id="chart-year-count" class="chart-container"></div>
+        </div>
+
+        <!-- 年度平均评分变化 -->
+        <div class="card">
+            <div class="card-header">年度平均评分变化</div>
+            <div id="chart-year-rating" class="chart-container"></div>
+        </div>
+
+        <!-- 年度平均片长变化 -->
+        <div class="card">
+            <div class="card-header">年度平均片长变化</div>
+            <div id="chart-year-duration" class="chart-container"></div>
+        </div>
+
+        <!-- 各类型年度趋势 -->
+        <div class="card">
+            <div class="card-header">各类型年度趋势</div>
+            <div id="chart-genre-year" class="chart-container"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var chartYearCount = null;
+    var chartYearRating = null;
+    var chartYearDuration = null;
+    var chartGenreYear = null;
+
+    var COLOR_PALETTE = [
+        '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
+        '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0'
+    ];
+
+    function showContent() {
+        document.getElementById('year-loading').style.display = 'none';
+        document.getElementById('year-content').style.display = '';
+    }
+
+    /* 年度电影数量趋势 - 柱状图 + 折线图 */
+    function initYearCountChart(yearData) {
+        var dom = document.getElementById('chart-year-count');
+        chartYearCount = echarts.init(dom);
+
+        var years = yearData.map(function (item) { return item.year; });
+        var counts = yearData.map(function (item) { return item.count; });
+
+        // 计算累计趋势
+        var cumulative = [];
+        var sum = 0;
+        counts.forEach(function (c) {
+            sum += c;
+            cumulative.push(sum);
+        });
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross' },
+                formatter: function (params) {
+                    var result = params[0].name + '年<br/>';
+                    params.forEach(function (p) {
+                        result += p.marker + ' ' + p.seriesName + ': <strong>' + p.value.toLocaleString() + '</strong><br/>';
+                    });
+                    return result;
+                }
+            },
+            legend: {
+                data: ['电影数量', '累计趋势'],
+                top: 5,
+                textStyle: { fontSize: 12 }
+            },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: years,
+                axisLabel: { fontSize: 11, rotate: 30 },
+                axisTick: { alignWithLabel: true }
+            },
+            yAxis: [
+                {
+                    type: 'value',
+                    name: '电影数量',
+                    nameTextStyle: { fontSize: 12 },
+                    axisLabel: { fontSize: 11 }
+                },
+                {
+                    type: 'value',
+                    name: '累计数量',
+                    nameTextStyle: { fontSize: 12 },
+                    axisLabel: { fontSize: 11 }
+                }
+            ],
+            series: [
+                {
+                    name: '电影数量',
+                    type: 'bar',
+                    data: counts,
+                    barWidth: '50%',
+                    itemStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#83bff6' },
+                            { offset: 1, color: '#188df0' }
+                        ]),
+                        borderRadius: [4, 4, 0, 0]
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: '#5b9bd5' },
+                                { offset: 1, color: '#2a5caa' }
+                            ])
+                        }
+                    }
+                },
+                {
+                    name: '累计趋势',
+                    type: 'line',
+                    yAxisIndex: 1,
+                    smooth: true,
+                    symbol: 'none',
+                    lineStyle: { width: 2, color: '#ff9f7f' },
+                    itemStyle: { color: '#ff9f7f' },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: 'rgba(255,159,127,0.3)' },
+                            { offset: 1, color: 'rgba(255,159,127,0.02)' }
+                        ])
+                    },
+                    data: cumulative
+                }
+            ]
+        };
+        chartYearCount.setOption(option);
+    }
+
+    /* 年度平均评分变化 */
+    function initYearRatingChart(yearData) {
+        var dom = document.getElementById('chart-year-rating');
+        chartYearRating = echarts.init(dom);
+
+        var years = yearData.map(function (item) { return item.year; });
+        var ratings = yearData.map(function (item) { return item.avg_rating; });
+
+        // 计算整体平均评分
+        var totalRating = 0;
+        ratings.forEach(function (r) { totalRating += r; });
+        var overallAvg = (totalRating / ratings.length).toFixed(2);
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    var d = params[0];
+                    return d.name + '年<br/>' + d.marker + ' 平均评分: <strong>' + Number(d.value).toFixed(2) + '</strong>';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: years,
+                axisLabel: { fontSize: 11, rotate: 30 }
+            },
+            yAxis: {
+                type: 'value',
+                name: '平均评分',
+                nameTextStyle: { fontSize: 12 },
+                axisLabel: { fontSize: 11 },
+                min: function (value) { return Math.floor(value.min * 10) / 10 - 0.5; },
+                max: function (value) { return Math.ceil(value.max * 10) / 10 + 0.5; }
+            },
+            series: [{
+                name: '平均评分',
+                type: 'line',
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: { width: 3, color: '#91cc75' },
+                itemStyle: { color: '#91cc75' },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(145,204,117,0.4)' },
+                        { offset: 1, color: 'rgba(145,204,117,0.02)' }
+                    ])
+                },
+                markLine: {
+                    silent: true,
+                    symbol: 'none',
+                    lineStyle: { type: 'dashed', color: '#ee6666', width: 2 },
+                    label: {
+                        formatter: '整体平均: ' + overallAvg,
+                        fontSize: 12,
+                        color: '#ee6666'
+                    },
+                    data: [{ yAxis: parseFloat(overallAvg) }]
+                },
+                data: ratings
+            }]
+        };
+        chartYearRating.setOption(option);
+    }
+
+    /* 年度平均片长变化 */
+    function initYearDurationChart(yearData) {
+        var dom = document.getElementById('chart-year-duration');
+        chartYearDuration = echarts.init(dom);
+
+        var years = yearData.map(function (item) { return item.year; });
+        var durations = yearData.map(function (item) { return item.avg_duration; });
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    var d = params[0];
+                    return d.name + '年<br/>' + d.marker + ' 平均片长: <strong>' + Number(d.value).toFixed(1) + ' 分钟</strong>';
+                }
+            },
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: years,
+                axisLabel: { fontSize: 11, rotate: 30 }
+            },
+            yAxis: {
+                type: 'value',
+                name: '平均片长 (分钟)',
+                nameTextStyle: { fontSize: 12 },
+                axisLabel: { fontSize: 11 }
+            },
+            series: [{
+                name: '平均片长',
+                type: 'line',
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 8,
+                lineStyle: { width: 3, color: '#5470c6' },
+                itemStyle: {
+                    color: '#5470c6',
+                    borderColor: '#fff',
+                    borderWidth: 2
+                },
+                data: durations
+            }]
+        };
+        chartYearDuration.setOption(option);
+    }
+
+    /* 各类型年度趋势 - 堆叠面积图 */
+    function initGenreYearChart(genreYearData) {
+        var dom = document.getElementById('chart-genre-year');
+        chartGenreYear = echarts.init(dom);
+
+        var years = genreYearData.years || [];
+        var genres = genreYearData.genres || [];
+        var seriesData = genreYearData.series || [];
+
+        // 取前6个类型
+        var topGenres = genres.slice(0, 6);
+        var topSeries = seriesData.slice(0, 6);
+
+        var series = topSeries.map(function (item, index) {
+            return {
+                name: topGenres[index],
+                type: 'line',
+                stack: '总量',
+                smooth: true,
+                symbol: 'none',
+                lineStyle: { width: 1 },
+                areaStyle: { opacity: 0.6 },
+                emphasis: { focus: 'series' },
+                data: item
+            };
+        });
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross' },
+                formatter: function (params) {
+                    var result = params[0].name + '年<br/>';
+                    params.forEach(function (p) {
+                        if (p.value > 0) {
+                            result += p.marker + ' ' + p.seriesName + ': <strong>' + p.value + '</strong><br/>';
+                        }
+                    });
+                    return result;
+                }
+            },
+            legend: {
+                data: topGenres,
+                top: 5,
+                textStyle: { fontSize: 12 }
+            },
+            color: COLOR_PALETTE,
+            grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: years,
+                axisLabel: { fontSize: 11, rotate: 30 }
+            },
+            yAxis: {
+                type: 'value',
+                name: '电影数量',
+                nameTextStyle: { fontSize: 12 },
+                axisLabel: { fontSize: 11 }
+            },
+            series: series
+        };
+        chartGenreYear.setOption(option);
+    }
+
+    function loadData() {
+        fetch('/api/year-trends')
+            .then(function (response) {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(function (data) {
+                /* API returns flat arrays: years, count, avg_rating, avg_votes,
+                   avg_duration, genre_trends, top_genres.
+                   Convert to the per-year object arrays the chart functions expect. */
+                var years = data.years || [];
+                showContent();
+
+                if (years.length && data.count) {
+                    var yearCount = years.map(function (y, i) {
+                        return { year: y, count: data.count[i] };
+                    });
+                    initYearCountChart(yearCount);
+                }
+                if (years.length && data.avg_rating) {
+                    var yearRating = years.map(function (y, i) {
+                        return { year: y, avg_rating: data.avg_rating[i] };
+                    });
+                    initYearRatingChart(yearRating);
+                }
+                if (years.length && data.avg_duration) {
+                    var yearDuration = years.map(function (y, i) {
+                        return { year: y, avg_duration: data.avg_duration[i] };
+                    });
+                    initYearDurationChart(yearDuration);
+                }
+                if (data.genre_trends && data.top_genres) {
+                    var genres = data.top_genres;
+                    var seriesData = genres.map(function (g) {
+                        return data.genre_trends[g] || [];
+                    });
+                    initGenreYearChart({ years: years, genres: genres, series: seriesData });
+                }
+                requestAnimationFrame(handleResize);
+            })
+            .catch(function (error) {
+                console.error('Failed to load year trends data:', error);
+                showContent();
+            });
+    }
+
+    function handleResize() {
+        if (chartYearCount) chartYearCount.resize();
+        if (chartYearRating) chartYearRating.resize();
+        if (chartYearDuration) chartYearDuration.resize();
+        if (chartGenreYear) chartGenreYear.resize();
+    }
+
+    window.addEventListener('resize', handleResize);
+    document.addEventListener('DOMContentLoaded', loadData);
+})();
+</script>
+{% endblock %}

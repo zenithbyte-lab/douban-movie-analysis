@@ -1,0 +1,453 @@
+{% extends 'base.html' %}
+
+{% block title %}电影浏览{% endblock %}
+{% block page_title %}电影浏览{% endblock %}
+
+{% block content %}
+<!-- Filter Bar -->
+<div class="filter-bar">
+    <input type="text" id="search-input" class="filter-input" placeholder="搜索电影名称/导演/演员...">
+    <select id="genre-select" class="filter-select">
+        <option value="">全部类型</option>
+    </select>
+    <select id="sort-select" class="filter-select">
+        <option value="评分">评分</option>
+        <option value="评分人数">评分人数</option>
+        <option value="上映年份">上映年份</option>
+    </select>
+    <button id="order-toggle" class="filter-btn" data-order="desc" title="切换排序顺序">降序</button>
+</div>
+
+<!-- Movie Table -->
+<div class="card">
+    <div class="table-wrapper">
+        <table class="data-table" id="movie-table">
+            <thead>
+                <tr>
+                    <th>序号</th>
+                    <th>电影名称</th>
+                    <th>评分</th>
+                    <th>评分人数</th>
+                    <th>类型</th>
+                    <th>导演</th>
+                    <th>年份</th>
+                    <th>国家</th>
+                </tr>
+            </thead>
+            <tbody id="movie-tbody">
+            </tbody>
+        </table>
+    </div>
+    <div id="table-empty" style="display: none; text-align: center; padding: 40px; color: #999;">
+        没有找到匹配的电影
+    </div>
+</div>
+
+<!-- Pagination -->
+<div class="pagination" id="pagination">
+    <button class="page-btn" id="btn-first" title="第一页">首页</button>
+    <button class="page-btn" id="btn-prev" title="上一页">上一页</button>
+    <span class="page-numbers" id="page-numbers"></span>
+    <button class="page-btn" id="btn-next" title="下一页">下一页</button>
+    <button class="page-btn" id="btn-last" title="最后一页">末页</button>
+    <span class="page-info" id="page-info"></span>
+</div>
+
+<!-- Movie Detail Modal -->
+<div class="modal-backdrop" id="movie-modal" style="display: none;">
+    <div class="movie-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+            <h2 class="modal-title" id="modal-title">电影详情</h2>
+            <button class="modal-close" id="modal-close" title="关闭">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+            <div class="loading-spinner" id="modal-loading">
+                <div class="spinner"></div>
+                <p>加载中...</p>
+            </div>
+            <div id="modal-content" style="display: none;">
+                <div class="detail-grid">
+                    <div class="detail-main">
+                        <h3 id="detail-name" class="detail-name"></h3>
+                        <div class="detail-meta">
+                            <span class="rating-badge" id="detail-rating"></span>
+                            <span class="detail-meta-item" id="detail-votes"></span>
+                            <span class="detail-meta-item" id="detail-year"></span>
+                            <span class="detail-meta-item" id="detail-duration"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">导演:</span>
+                            <span class="detail-value" id="detail-director"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">编剧:</span>
+                            <span class="detail-value" id="detail-writers"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">主演:</span>
+                            <span class="detail-value" id="detail-actors"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">类型:</span>
+                            <span class="detail-value" id="detail-genre"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">国家/地区:</span>
+                            <span class="detail-value" id="detail-country"></span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">语言:</span>
+                            <span class="detail-value" id="detail-language"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="detail-section" id="detail-summary-section">
+                    <h4 class="detail-section-title">剧情简介</h4>
+                    <p class="detail-summary" id="detail-summary"></p>
+                </div>
+                <div class="detail-section" id="detail-sentiment-section">
+                    <h4 class="detail-section-title">情感分析</h4>
+                    <div id="detail-sentiment"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var currentPage = 1;
+    var totalPages = 1;
+    var pageSize = 20;
+    var searchTimer = null;
+    var genresLoaded = false;
+    var lastRequestId = 0;
+
+    var searchInput = document.getElementById('search-input');
+    var genreSelect = document.getElementById('genre-select');
+    var sortSelect = document.getElementById('sort-select');
+    var orderToggle = document.getElementById('order-toggle');
+    var movieTbody = document.getElementById('movie-tbody');
+    var tableEmpty = document.getElementById('table-empty');
+    var pageNumbers = document.getElementById('page-numbers');
+    var pageInfo = document.getElementById('page-info');
+    var movieModal = document.getElementById('movie-modal');
+    var modalClose = document.getElementById('modal-close');
+    var modalLoading = document.getElementById('modal-loading');
+    var modalContent = document.getElementById('modal-content');
+
+    function populateGenres(genres) {
+        if (genresLoaded || !genres || !genres.length) return;
+        genres.forEach(function (g) {
+            var opt = document.createElement('option');
+            opt.value = g;
+            opt.textContent = g;
+            genreSelect.appendChild(opt);
+        });
+        genresLoaded = true;
+    }
+
+    function renderStatusRow(text, isError) {
+        movieTbody.innerHTML =
+            '<tr><td colspan="8" style="text-align:center;padding:34px;color:' +
+            (isError ? 'var(--danger)' : 'var(--text-secondary)') + ';">' +
+            escapeHtml(text) + '</td></tr>';
+        tableEmpty.style.display = 'none';
+    }
+
+    /* --- Fetch movies --- */
+    function fetchMovies() {
+        var requestId = ++lastRequestId;
+        renderStatusRow('正在加载电影数据...', false);
+
+        var params = new URLSearchParams();
+        params.set('page', currentPage);
+        params.set('per_page', pageSize);
+
+        var keyword = searchInput.value.trim();
+        if (keyword) params.set('search', keyword);
+
+        var genre = genreSelect.value;
+        if (genre) params.set('genre', genre);
+
+        params.set('sort', sortSelect.value);
+        params.set('order', orderToggle.getAttribute('data-order'));
+
+        fetch('/api/movies?' + params.toString())
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (requestId !== lastRequestId) return;
+                populateGenres(data.genres || data.genre_list || []);
+                renderTable(data);
+                renderPagination(data);
+            })
+            .catch(function (err) {
+                if (requestId !== lastRequestId) return;
+                console.error('Failed to fetch movies:', err);
+                renderStatusRow('电影数据加载失败，请刷新后重试', true);
+            });
+    }
+
+    /* --- Render table --- */
+    function renderTable(data) {
+        var movies = data.movies || data.data || data.items || [];
+        totalPages = data.total_pages || data.pages || 1;
+        movieTbody.innerHTML = '';
+
+        if (movies.length === 0) {
+            tableEmpty.style.display = '';
+            return;
+        }
+        tableEmpty.style.display = 'none';
+
+        movies.forEach(function (movie, index) {
+            var tr = document.createElement('tr');
+            var rating = parseFloat(movie.rating) || 0;
+            var ratingClass = '';
+            if (rating >= 8) {
+                ratingClass = 'rating-high';
+            } else if (rating >= 6) {
+                ratingClass = 'rating-mid';
+            } else {
+                ratingClass = 'rating-low';
+            }
+
+            var seq = (currentPage - 1) * pageSize + index + 1;
+            var movieIdx = movie.index != null ? movie.index : index;
+
+            tr.innerHTML =
+                '<td>' + seq + '</td>' +
+                '<td><a href="javascript:void(0)" class="movie-link" data-idx="' + movieIdx + '">' +
+                    escapeHtml(movie.name || movie.title || '--') + '</a></td>' +
+                '<td><span class="rating-badge ' + ratingClass + '">' + (movie.rating || '--') + '</span></td>' +
+                '<td>' + ((movie.votes != null) ? Number(movie.votes).toLocaleString() : '--') + '</td>' +
+                '<td>' + escapeHtml(movie.genre || movie.genres || '--') + '</td>' +
+                '<td>' + escapeHtml(movie.director || '--') + '</td>' +
+                '<td>' + (movie.year || '--') + '</td>' +
+                '<td>' + escapeHtml(movie.country || '--') + '</td>';
+
+            movieTbody.appendChild(tr);
+        });
+
+        /* Bind movie link clicks */
+        var links = movieTbody.querySelectorAll('.movie-link');
+        links.forEach(function (link) {
+            link.addEventListener('click', function () {
+                var idx = this.getAttribute('data-idx');
+                openMovieDetail(idx);
+            });
+        });
+    }
+
+    /* --- Render pagination --- */
+    function renderPagination(data) {
+        totalPages = data.total_pages || data.pages || 1;
+        var total = data.total || data.total_count || 0;
+
+        document.getElementById('btn-first').disabled = (currentPage <= 1);
+        document.getElementById('btn-prev').disabled = (currentPage <= 1);
+        document.getElementById('btn-next').disabled = (currentPage >= totalPages);
+        document.getElementById('btn-last').disabled = (currentPage >= totalPages);
+
+        /* Page number buttons */
+        pageNumbers.innerHTML = '';
+        var startPage = Math.max(1, currentPage - 2);
+        var endPage = Math.min(totalPages, currentPage + 2);
+
+        for (var i = startPage; i <= endPage; i++) {
+            var btn = document.createElement('button');
+            btn.className = 'page-btn page-num' + (i === currentPage ? ' active' : '');
+            btn.textContent = i;
+            btn.setAttribute('data-page', i);
+            btn.addEventListener('click', function () {
+                currentPage = parseInt(this.getAttribute('data-page'));
+                fetchMovies();
+            });
+            pageNumbers.appendChild(btn);
+        }
+
+        pageInfo.textContent = '第 ' + currentPage + ' / ' + totalPages + ' 页，共 ' + total + ' 条';
+    }
+
+    /* --- Movie detail modal --- */
+    function openMovieDetail(idx) {
+        movieModal.style.display = 'flex';
+        modalLoading.style.display = '';
+        modalContent.style.display = 'none';
+        document.body.style.overflow = 'hidden';
+
+        fetch('/api/movie-detail/' + idx)
+            .then(function (res) { return res.json(); })
+            .then(function (movie) {
+                document.getElementById('modal-title').textContent = movie.name || movie.title || '电影详情';
+                document.getElementById('detail-name').textContent = movie.name || movie.title || '--';
+
+                var rating = parseFloat(movie.rating) || 0;
+                var ratingEl = document.getElementById('detail-rating');
+                ratingEl.textContent = movie.rating || '--';
+                ratingEl.className = 'rating-badge';
+                if (rating >= 8) ratingEl.classList.add('rating-high');
+                else if (rating >= 6) ratingEl.classList.add('rating-mid');
+                else ratingEl.classList.add('rating-low');
+
+                document.getElementById('detail-votes').textContent =
+                    (movie.votes != null) ? Number(movie.votes).toLocaleString() + ' 人评价' : '';
+                document.getElementById('detail-year').textContent = movie.year || '';
+                document.getElementById('detail-duration').textContent = movie.duration || '';
+                document.getElementById('detail-director').textContent = movie.director || '--';
+                document.getElementById('detail-writers').textContent = movie.writers || movie.writer || '--';
+                document.getElementById('detail-actors').textContent = movie.actors || movie.cast || '--';
+                document.getElementById('detail-genre').textContent = movie.genre || movie.genres || '--';
+                document.getElementById('detail-country').textContent = movie.country || '--';
+                document.getElementById('detail-language').textContent = movie.language || '--';
+
+                var summarySection = document.getElementById('detail-summary-section');
+                var summaryEl = document.getElementById('detail-summary');
+                if (movie.summary) {
+                    summaryEl.textContent = movie.summary;
+                    summarySection.style.display = '';
+                } else {
+                    summarySection.style.display = 'none';
+                }
+
+                var sentimentSection = document.getElementById('detail-sentiment-section');
+                var sentimentEl = document.getElementById('detail-sentiment');
+                if (movie.sentiment || movie.sentiment_analysis) {
+                    var sentiment = movie.sentiment || movie.sentiment_analysis;
+                    if (typeof sentiment === 'object') {
+                        var html = '';
+                        if (sentiment.label || sentiment.result) {
+                            html += '<p><strong>情感倾向:</strong> ' +
+                                escapeHtml(sentiment.label || sentiment.result) + '</p>';
+                        }
+                        if (sentiment.score != null || sentiment.confidence != null) {
+                            html += '<p><strong>置信度:</strong> ' +
+                                (((sentiment.score || sentiment.confidence) * 100).toFixed(1)) + '%</p>';
+                        }
+                        if (sentiment.positive != null) {
+                            html += '<p><strong>积极:</strong> ' + (sentiment.positive * 100).toFixed(1) + '% ' +
+                                '<strong>消极:</strong> ' + ((sentiment.negative || (1 - sentiment.positive)) * 100).toFixed(1) + '%</p>';
+                        }
+                        if (sentiment.detail) {
+                            html += '<p>' + escapeHtml(sentiment.detail) + '</p>';
+                        }
+                        sentimentEl.innerHTML = html;
+                    } else {
+                        sentimentEl.textContent = String(sentiment);
+                    }
+                    sentimentSection.style.display = '';
+                } else {
+                    sentimentSection.style.display = 'none';
+                }
+
+                modalLoading.style.display = 'none';
+                modalContent.style.display = '';
+            })
+            .catch(function (err) {
+                console.error('Failed to load movie detail:', err);
+                modalLoading.style.display = 'none';
+                modalContent.innerHTML = '<p style="color:#e74c3c;text-align:center;">加载失败，请重试</p>';
+                modalContent.style.display = '';
+            });
+    }
+
+    function closeModal() {
+        movieModal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    /* --- Utility --- */
+    function escapeHtml(text) {
+        if (!text) return '';
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(String(text)));
+        return div.innerHTML;
+    }
+
+    function debounce(fn, delay) {
+        return function () {
+            var context = this;
+            var args = arguments;
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () {
+                fn.apply(context, args);
+            }, delay);
+        };
+    }
+
+    /* --- Event listeners --- */
+
+    /* Debounced search */
+    searchInput.addEventListener('input', debounce(function () {
+        currentPage = 1;
+        fetchMovies();
+    }, 350));
+
+    /* Genre filter */
+    genreSelect.addEventListener('change', function () {
+        currentPage = 1;
+        fetchMovies();
+    });
+
+    /* Sort change */
+    sortSelect.addEventListener('change', function () {
+        currentPage = 1;
+        fetchMovies();
+    });
+
+    /* Order toggle */
+    orderToggle.addEventListener('click', function () {
+        var current = this.getAttribute('data-order');
+        if (current === 'desc') {
+            this.setAttribute('data-order', 'asc');
+            this.textContent = '升序';
+        } else {
+            this.setAttribute('data-order', 'desc');
+            this.textContent = '降序';
+        }
+        currentPage = 1;
+        fetchMovies();
+    });
+
+    /* Pagination buttons */
+    document.getElementById('btn-first').addEventListener('click', function () {
+        currentPage = 1;
+        fetchMovies();
+    });
+    document.getElementById('btn-prev').addEventListener('click', function () {
+        if (currentPage > 1) { currentPage--; fetchMovies(); }
+    });
+    document.getElementById('btn-next').addEventListener('click', function () {
+        if (currentPage < totalPages) { currentPage++; fetchMovies(); }
+    });
+    document.getElementById('btn-last').addEventListener('click', function () {
+        currentPage = totalPages;
+        fetchMovies();
+    });
+
+    /* Modal close */
+    modalClose.addEventListener('click', closeModal);
+
+    /* Click outside modal to close */
+    movieModal.addEventListener('click', function (e) {
+        if (e.target === movieModal) {
+            closeModal();
+        }
+    });
+
+    /* Escape key to close modal */
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && movieModal.style.display !== 'none') {
+            closeModal();
+        }
+    });
+
+    /* --- Initialize --- */
+    document.addEventListener('DOMContentLoaded', function () {
+        fetchMovies();
+    });
+})();
+</script>
+{% endblock %}

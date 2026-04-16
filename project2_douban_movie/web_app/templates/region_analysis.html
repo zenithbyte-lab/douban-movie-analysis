@@ -1,0 +1,364 @@
+{% extends 'base.html' %}
+
+{% block title %}地区分析 - 豆瓣电影数据分析系统{% endblock %}
+
+{% block page_title %}地区分析{% endblock %}
+
+{% block content %}
+<div class="chart-grid">
+    <!-- 电影产地分布 Top 20 -->
+    <div class="card">
+        <div class="card-header">
+            <span>电影产地分布 Top 20</span>
+            <span class="badge bg-primary">按数量排序</span>
+        </div>
+        <div id="loading-distribution" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-distribution" class="chart-container tall" style="display:none;"></div>
+    </div>
+
+    <!-- 各地区平均评分 -->
+    <div class="card">
+        <div class="card-header">
+            <span>各地区平均评分</span>
+            <span class="badge bg-success">评分对比</span>
+        </div>
+        <div id="loading-avg-rating" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-avg-rating" class="chart-container tall" style="display:none;"></div>
+    </div>
+
+    <!-- 国家/类型交叉分析 -->
+    <div class="card">
+        <div class="card-header">
+            <span>国家/类型交叉分析</span>
+            <span class="badge bg-warning text-dark">Top 8 国家</span>
+        </div>
+        <div id="loading-genre-cross" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-genre-cross" class="chart-container tall" style="display:none;"></div>
+    </div>
+
+    <!-- 主要国家年度趋势 -->
+    <div class="card">
+        <div class="card-header">
+            <span>主要国家年度趋势</span>
+            <span class="badge bg-info">Top 5 国家</span>
+        </div>
+        <div id="loading-trend" class="loading-spinner">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+        </div>
+        <div id="chart-trend" class="chart-container tall" style="display:none;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var chartDistribution = null;
+    var chartAvgRating = null;
+    var chartGenreCross = null;
+    var chartTrend = null;
+
+    function getRatingColor(rating) {
+        if (rating >= 8.0) return '#22c55e';
+        if (rating >= 7.5) return '#4ade80';
+        if (rating >= 7.0) return '#84cc16';
+        if (rating >= 6.5) return '#facc15';
+        if (rating >= 6.0) return '#f59e0b';
+        if (rating >= 5.5) return '#f97316';
+        return '#ef4444';
+    }
+
+    function showChart(chartId, loadingId) {
+        document.getElementById(loadingId).style.display = 'none';
+        document.getElementById(chartId).style.display = 'block';
+    }
+
+    function stabilizeChart(chart) {
+        requestAnimationFrame(function() { chart.resize(); });
+        setTimeout(function() { chart.resize(); }, 80);
+    }
+
+    function initDistributionChart(distData) {
+        showChart('chart-distribution', 'loading-distribution');
+        chartDistribution = echarts.init(document.getElementById('chart-distribution'));
+
+        var regions = (distData.labels || []).slice(0, 20).reverse();
+        var counts = (distData.values || []).slice(0, 20).reverse();
+
+        chartDistribution.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    var idx = params[0].dataIndex;
+                    return '<strong>' + regions[idx] + '</strong><br/>' +
+                           '电影数量: ' + counts[idx] + ' 部';
+                }
+            },
+            grid: { left: 100, right: 60, top: 20, bottom: 30 },
+            xAxis: {
+                type: 'value',
+                name: '电影数量',
+                nameTextStyle: { color: '#64748b', fontSize: 12 }
+            },
+            yAxis: {
+                type: 'category',
+                data: regions,
+                axisLabel: { fontSize: 12, color: '#334155' }
+            },
+            series: [{
+                type: 'bar',
+                data: counts.map(function(val, i) {
+                    var ratio = i / (counts.length - 1 || 1);
+                    return {
+                        value: val,
+                        itemStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                { offset: 0, color: '#93c5fd' },
+                                { offset: 1, color: '#2563eb' }
+                            ])
+                        }
+                    };
+                }),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    fontSize: 11,
+                    color: '#64748b',
+                    formatter: '{c} 部'
+                }
+            }]
+        });
+        stabilizeChart(chartDistribution);
+    }
+
+    function initAvgRatingChart(ratingData) {
+        showChart('chart-avg-rating', 'loading-avg-rating');
+        chartAvgRating = echarts.init(document.getElementById('chart-avg-rating'));
+
+        var regions = (ratingData.labels || []).slice(0, 20).reverse();
+        var ratings = (ratingData.values || []).slice(0, 20).reverse();
+        var counts = [];
+        var colors = ratings.map(function(r) { return getRatingColor(r); });
+
+        chartAvgRating.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                formatter: function(params) {
+                    var idx = params[0].dataIndex;
+                    return '<strong>' + regions[idx] + '</strong><br/>' +
+                           '平均评分: ' + ratings[idx].toFixed(1) + ' 分';
+                }
+            },
+            grid: { left: 100, right: 60, top: 20, bottom: 30 },
+            xAxis: {
+                type: 'value',
+                name: '平均评分',
+                min: function(value) { return Math.floor(value.min * 10) / 10 - 0.5; },
+                max: 10,
+                nameTextStyle: { color: '#64748b', fontSize: 12 }
+            },
+            yAxis: {
+                type: 'category',
+                data: regions,
+                axisLabel: { fontSize: 12, color: '#334155' }
+            },
+            series: [{
+                type: 'bar',
+                data: ratings.map(function(val, i) {
+                    return { value: val, itemStyle: { color: colors[i] } };
+                }),
+                barMaxWidth: 20,
+                label: {
+                    show: true,
+                    position: 'right',
+                    fontSize: 11,
+                    color: '#64748b',
+                    formatter: function(params) {
+                        return params.value.toFixed(1) + ' 分';
+                    }
+                }
+            }]
+        });
+        stabilizeChart(chartAvgRating);
+    }
+
+    function initGenreCrossChart(countryGenre) {
+        showChart('chart-genre-cross', 'loading-genre-cross');
+        chartGenreCross = echarts.init(document.getElementById('chart-genre-cross'));
+
+        var countries = (countryGenre.countries || []).slice(0, 8);
+        var genres = countryGenre.genres || [];
+        var matrix = countryGenre.matrix || [];
+
+        // Sum each genre across the top 8 countries to find the top 10 genres
+        var genreSet = {};
+        countries.forEach(function(c, ci) {
+            var countryIdx = countryGenre.countries.indexOf(c);
+            if (countryIdx >= 0 && matrix[countryIdx]) {
+                genres.forEach(function(g, gi) {
+                    genreSet[g] = (genreSet[g] || 0) + (matrix[countryIdx][gi] || 0);
+                });
+            }
+        });
+
+        var topGenres = Object.keys(genreSet).sort(function(a, b) { return genreSet[b] - genreSet[a]; }).slice(0, 10);
+
+        var genreColors = [
+            '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
+            '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1'
+        ];
+
+        var series = topGenres.map(function(genre, i) {
+            var genreIdx = genres.indexOf(genre);
+            return {
+                name: genre,
+                type: 'bar',
+                stack: 'total',
+                data: countries.map(function(c) {
+                    var countryIdx = countryGenre.countries.indexOf(c);
+                    return (countryIdx >= 0 && matrix[countryIdx] && genreIdx >= 0) ? (matrix[countryIdx][genreIdx] || 0) : 0;
+                }),
+                itemStyle: { color: genreColors[i % genreColors.length] },
+                emphasis: { focus: 'series' }
+            };
+        });
+
+        chartGenreCross.setOption({
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' }
+            },
+            legend: {
+                data: topGenres,
+                top: 0,
+                textStyle: { fontSize: 11, color: '#64748b' },
+                type: 'scroll'
+            },
+            grid: { left: 80, right: 30, top: 50, bottom: 30 },
+            xAxis: {
+                type: 'category',
+                data: countries,
+                axisLabel: { fontSize: 12, color: '#334155', rotate: 15 }
+            },
+            yAxis: {
+                type: 'value',
+                name: '电影数量',
+                nameTextStyle: { color: '#64748b', fontSize: 12 }
+            },
+            series: series
+        });
+        stabilizeChart(chartGenreCross);
+    }
+
+    function initTrendChart(countryYear) {
+        showChart('chart-trend', 'loading-trend');
+        chartTrend = echarts.init(document.getElementById('chart-trend'));
+
+        var years = (countryYear.years || []).map(String);
+        var countries = (countryYear.countries || []).slice(0, 5);
+        var trends = countryYear.trends || {};
+
+        var lineColors = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6'];
+
+        var series = countries.map(function(country, i) {
+            var trendValues = trends[country] || [];
+            return {
+                name: country,
+                type: 'line',
+                smooth: true,
+                data: trendValues,
+                lineStyle: { width: 2.5, color: lineColors[i % lineColors.length] },
+                itemStyle: { color: lineColors[i % lineColors.length] },
+                symbol: 'circle',
+                symbolSize: 4,
+                emphasis: { focus: 'series' }
+            };
+        });
+
+        chartTrend.setOption({
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    var tip = '<strong>' + params[0].axisValue + ' 年</strong>';
+                    params.forEach(function(p) {
+                        if (p.value > 0) {
+                            tip += '<br/>' + p.marker + ' ' + p.seriesName + ': ' + p.value + ' 部';
+                        }
+                    });
+                    return tip;
+                }
+            },
+            legend: {
+                data: countries,
+                top: 0,
+                textStyle: { fontSize: 12, color: '#64748b' }
+            },
+            grid: { left: 60, right: 30, top: 50, bottom: 50 },
+            xAxis: {
+                type: 'category',
+                data: years,
+                name: '年份',
+                nameLocation: 'center',
+                nameGap: 30,
+                nameTextStyle: { color: '#64748b', fontSize: 13 },
+                axisLabel: {
+                    fontSize: 11,
+                    color: '#64748b',
+                    rotate: 45,
+                    interval: function(index) {
+                        return years.length <= 30 || index % Math.ceil(years.length / 30) === 0;
+                    }
+                },
+                boundaryGap: false
+            },
+            yAxis: {
+                type: 'value',
+                name: '电影数量',
+                nameTextStyle: { color: '#64748b', fontSize: 13 },
+                splitLine: { lineStyle: { type: 'dashed', color: '#e2e8f0' } }
+            },
+            series: series
+        });
+        stabilizeChart(chartTrend);
+    }
+
+    fetch('/api/region-analysis')
+        .then(function(res) { return res.json(); })
+        .then(function(result) {
+            var data = result.data || result;
+
+            initDistributionChart(data.distribution || {});
+            initAvgRatingChart(data.avg_rating || {});
+            initGenreCrossChart(data.country_genre || {});
+            initTrendChart(data.country_year || {});
+        })
+        .catch(function(err) {
+            console.error('Failed to load region analysis data:', err);
+            ['loading-distribution', 'loading-avg-rating', 'loading-genre-cross', 'loading-trend'].forEach(function(id) {
+                var el = document.getElementById(id);
+                el.innerHTML = '<span style="color:#ef4444;">数据加载失败，请稍后重试</span>';
+            });
+        });
+
+    window.addEventListener('resize', function() {
+        if (chartDistribution) chartDistribution.resize();
+        if (chartAvgRating) chartAvgRating.resize();
+        if (chartGenreCross) chartGenreCross.resize();
+        if (chartTrend) chartTrend.resize();
+    });
+})();
+</script>
+{% endblock %}
